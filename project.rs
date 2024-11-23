@@ -43,9 +43,10 @@ impl U4 {
     fn get(self) -> u8 {
         self.0
     }
-    //switches endianness
+    //switches bit ordering
+    //default: MSB on left
     fn reverse(self) {
-        self.0 = self.0.reverse() >> 4
+        self.0 = self.0.reverse_bits() >> 4
     }
 }
 impl From<u8> for U4 {
@@ -230,7 +231,7 @@ mod TMS1000 {
         }
 
         fn LDP (&mut self, U4 VALUE) {
-            //MSB of value on right
+            self.STATE.PAGE_BUFFER = VALUE.reverse(); //MSB on right
 
         }
 
