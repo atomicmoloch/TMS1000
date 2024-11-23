@@ -6,6 +6,13 @@ struct U1(u8);
 impl U1 {
     fn new(x: u8) -> Self {
         U1(x % 1)
+    fn get() -> u8 {
+        self.0
+    }
+}
+impl From<u8> for U1 {
+    fn from(x: u8) -> Self {
+        U1::new(x)
     }
 }
 
@@ -16,6 +23,14 @@ impl U2 {
     fn new(x: u8) -> Self {
         U2(x % 4)
     }
+    fn get() -> u8 {
+        self.0
+    }
+}
+impl From<u8> for U2 {
+    fn from(x: u8) -> Self {
+        U2::new(x)
+    }
 }
 
 //4 bit unsigned integer
@@ -24,6 +39,14 @@ struct U4(u8);
 impl U4 {
     fn new(x: u8) -> Self {
         U4(x % 16)
+    }
+    fn get() -> u8 {
+        self.0
+    }
+}
+impl From<u8> for U4 {
+    fn from(x: u8) -> Self {
+        U4::new(x)
     }
 }
 
@@ -34,6 +57,14 @@ impl U5 {
     fn new(x: u8) -> Self {
         U5(x % 32)
     }
+    fn get() -> u8 {
+        self.0
+    }
+}
+impl From<u8> for U5 {
+    fn from(x: u8) -> Self {
+        U5::new(x)
+    }
 }
 
 //6 bit unsigned integer
@@ -42,6 +73,14 @@ struct U6(u8);
 impl U6 {
     fn new(x: u8) -> Self {
         U6(x % 64)
+    }
+    fn get() -> u8 {
+        self.0
+    }
+}
+impl From<u8> for U6 {
+    fn from(x: u8) -> Self {
+        U6::new(x)
     }
 }
 
@@ -148,8 +187,8 @@ mod TMS1000 {
                 0 => return self.PAGE_RAM(),
                 1 => return self.CKI(),
                 2 => return self.STATE.ACCUMULATOR,
-                3 => return 1 + !(self.STATE.ACCUMULATOR),
-                _ => return 15,
+                3 => return U4::new(1 + !(self.STATE.ACCUMULATOR)),
+                _ => return U4::new(15),
             }
         }
 
@@ -161,7 +200,7 @@ mod TMS1000 {
         //Microinstructions
         //P-MUX instructions
 
-        fn CKP(&mut self) {
+        fn CKP(&mut self, U4 VALUE) {
             self.STATE.P_MUX_LOGIC = U4::new(1);
         }
 
@@ -176,23 +215,23 @@ mod TMS1000 {
         //N-MUX instructions
 
         fn ATN(&mut self) {
-            self.STATE.N_MUX_LOGIC = 2;
+            self.STATE.N_MUX_LOGIC = U5::new(2);
         }
 
         fn NATN(&mut self) {
-            self.STATE.N_MUX_LOGIC = 3;
+            self.STATE.N_MUX_LOGIC = U5::new(3);
         }
 
         fn MTN(&mut self) {
-            self.STATE.N_MUX_LOGIC = 0;
+            self.STATE.N_MUX_LOGIC = U5::new(0);
         }
 
         fn 15TN(&mut self) {
-            self.STATE.N_MUX_LOGIC = 4;
+            self.STATE.N_MUX_LOGIC = U5::new(4);
         }
 
         fn CKN(&mut self) {
-            self.STATE.N_MUX_LOGIC = 1;
+            self.STATE.N_MUX_LOGIC = U5::new(1);
         }
 
         //Adder/status instructions
@@ -203,10 +242,10 @@ mod TMS1000 {
 
         fn NE(&mut self) {
             if (self.N_MUX() == self.P_MUX()) {
-                self.STATE.STATUS = 0;
+                self.STATE.STATUS = U1::new(0);
             }
             else {
-                self.STATE.STATUS = 1;
+                self.STATE.STATUS = U1::new(1);
             }
         }
 
