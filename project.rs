@@ -40,8 +40,12 @@ impl U4 {
     fn new(x: u8) -> Self {
         U4(x % 16)
     }
-    fn get() -> u8 {
+    fn get(self) -> u8 {
         self.0
+    }
+    //switches endianness
+    fn reverse(self) {
+        self.0 = self.0.reverse() >> 4
     }
 }
 impl From<u8> for U4 {
@@ -122,6 +126,7 @@ mod TMS1000 {
         // actually unnecessary
 
         CKI_LOGIC: U4, //CKI, data multiplexxer; selects either constant field, k input to enter cki data bus, or bit mask
+        CKI_CONSTANT: U4,
 
         //au_select ; //data selector; selects destination of adder output to Y reg, acc, or neither
 
@@ -164,11 +169,26 @@ mod TMS1000 {
             return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];
         }
 
-        fn WRITE_RAM(&mut self, U4 VALUE) -> {
+        fn WRITE_RAM(&mut self, U4 VALUE) {
             self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = VALUE;
         }
 
+        fn K_INPUT(&mut self) -> U4 {
+            //todo
+            //might need to page an external function to get current input values?
+            //alternatively, there could be a systemstate value that's updated by an external handler
+            //and K_input reads this state variable and then zeroes it
+            //this way prevent race condition problems
+        }
+
         fn CKI(&mut self) -> U4 {
+            //selects either constant field, k input to enter cki data bus, or bit mask
+            match self.STATE.CKI_LOGIC {
+                0 => return self.STATE.CKI_CONSTANT,
+                _ => return self.K_INPUT(),
+               // _ => bitmask
+
+            }
 
         }
 
@@ -187,17 +207,66 @@ mod TMS1000 {
                 0 => return self.PAGE_RAM(),
                 1 => return self.CKI(),
                 2 => return self.STATE.ACCUMULATOR,
-                3 => return U4::new(1 + !(self.STATE.ACCUMULATOR)),
+                3 => return U4::new(1 + !(self.STATE.ACCUMULATOR.get())),
                 _ => return U4::new(15),
             }
         }
 
         fn ADDER(&mut self) -> (U4, U1) {
-            const VALUE = U5::new(self.P_MUX() + self.N_MUX() + self.STATE.ADDER_INC);
+            const VALUE: u8 = (self.P_MUX().get() + self.N_MUX().get() + self.STATE.ADDER_INC.get());
             return (U1::new(VALUE >> 4 & 1), U4::new(VALUE));
         }
 
         //Microinstructions
+
+        //Fixed microinstructions
+
+        fn BR (&mut self) {
+
+        }
+
+        fn CALL (&mut self) {
+
+        }
+
+        fn LDP (&mut self, U4 VALUE) {
+            //MSB of value on right
+
+        }
+
+        fn LDX(&mut self, U2 VALUE) {
+            self.STATE.X_REGISTER = VALUE;
+        }
+
+        fn COMX (&mut self) {
+
+        }
+
+        fn TDO (&mut self) {
+
+        }
+
+        fn CLO (&mut self) {
+
+        }
+
+        fn SETR (&mut self) {
+
+        }
+
+        fn RSTR (&mut self) {
+
+        }
+
+        fn SBIT (&mut self) {
+
+        }
+
+        fn RBIT (&mut self) {
+
+        }
+
+        //Programmable microinstructions
         //P-MUX instructions
 
         fn CKP(&mut self, U4 VALUE) {
