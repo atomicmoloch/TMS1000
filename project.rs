@@ -132,6 +132,8 @@ mod TMS1000 {
         RAM_ARRAY: [[U4, 4], 4],
 
         //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix.
+        R_OUTPUT: [U1, 11],
+
 
         X_REGISTER: U2, //X, storage register; ram page address
         Y_REGISTER: U4, //Y, storage register; ram word address and R output address
@@ -142,7 +144,7 @@ mod TMS1000 {
         CKI_LOGIC: U4, //CKI, data multiplexxer; selects either constant field, k input to enter cki data bus, or bit mask
         CKI_CONSTANT: U4,
 
-        //au_select ; //data selector; selects destination of adder output to Y reg, acc, or neither
+        //au_select ; //data selector; selects destination of adder output to Y reg, acc, or neither //unnecessary
 
         STATUS: U1, //S, gates. conditional branch control. Normal state - 1. Branches are taken if S = 1. Selectively outputs a zero when carry is false or when logical compare is true. A zero lasts for one instruction cycle only.
         STATUS_LATCH: U1, //SL, latch, selectively stores status output. Transfers to O register w/ acc bits when TDO is executed
@@ -277,11 +279,17 @@ mod TMS1000 {
         }
 
         fn SETR (&mut self) {
-
+            //sets R(Y) to 1; if Y out of range, no-op
+            if (self.STATE.Y_REGISTER.get() <= 10) {
+                self.STATE.R_OUTPUT[self.STATE.Y_REGISTER.get()] = U1::new(1);
+            }
         }
 
         fn RSTR (&mut self) {
-
+            //sets R(Y) to 0; if Y out of range, no-op
+            if (self.STATE.Y_REGISTER.get() <= 10) {
+                self.STATE.R_OUTPUT[self.STATE.Y_REGISTER.get()] = U1::new(0);
+            }
         }
 
         fn SBIT (&mut self) {
