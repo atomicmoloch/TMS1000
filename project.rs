@@ -214,7 +214,7 @@ mod TMS1000 {
 
         fn SET_PC(&mut self, U6 VALUE) {
             self.STATE.PROGRAM_COUNTER = VALUE;
-            self.STATE.PC_INDEX = self.PC_SEQ.inter().position(|&i| i == VALUE).unwrap();
+            self.STATE.PC_INDEX = self.PC_SEQ.iter().position(|&i| i == VALUE).unwrap();
         }
 
         fn PAGE_RAM(&mut self) -> U4 {
