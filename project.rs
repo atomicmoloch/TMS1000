@@ -143,6 +143,7 @@ mod TMS1000 {
 
     struct SYSTEMSTATE {
         PROGRAM_COUNTER: U6, //PC, shift register
+        PC_INDEX: U6, //index for pseudo-random program counter
         SUBROUTINE_RETURN: U6, //SR, storage register
 
         PAGE_ADDRESS: U4, //PA, storage register; contains 4-bit page address of rom instructions
@@ -186,6 +187,7 @@ mod TMS1000 {
 
     struct SYSTEM {
         STATE: SYSTEMSTATE,
+        PC_SEQ: [U6; 64],
         //ROM array
         //Output PLA
         //Instruction decode PLA
@@ -203,6 +205,17 @@ mod TMS1000 {
     //Fixed instruction decoder
 
     impl SYSTEM {
+
+        //Program counter handler functions
+        fn INCREMENT_PC(&mut self) {
+            self.STATE.PC_INDEX = self.STATE.PC_INDEX + 1;
+            self.STATE.PROGRAM_COUNTER = self.PC_SEQ[self.STATE.PC_INDEX.get()];
+        }
+
+        fn SET_PC(&mut self, U6 VALUE) {
+            self.STATE.PROGRAM_COUNTER = VALUE;
+            self.STATE.PC_INDEX = self.PC_SEQ.inter().position(|&i| i == VALUE).unwrap();
+        }
 
         fn PAGE_RAM(&mut self) -> U4 {
             return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];
@@ -268,26 +281,40 @@ mod TMS1000 {
                 if (self.STATE.CALL_LATCH.get() == 0) {
                     self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
                 }
-                self.STATE.PROGRAM_COUNTER = VALUE;
+                self.SET_PC(VALUE);
             }
             else {
-                self.STATE.PROGRAM_COUNTER = self.STATE.PROGRAM_COUNTER + 1;
+                self.INCREMENT_PC();
                 self.STATE.STATUS = U1::new(1);
             }
         }
 
-        fn CALL (&mut self) {
-
+        fn CALL (&mut self, U6 VALUE) {
+            //CALL SUBROUTINE instruction
+            if (self.STATE.STATUS.get() == 1) {
+                if (self.STATE.CALL_LATCH.get() == 0) {
+                    self.STATE.SUBROUTINE_RETURN = self.PC_SEQ[self.STATE.PC_INDEX.get() + 1];
+                    (self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER) = (self.STATE.PAGE_BUFFER, self.STATE.PAGE_ADDRESS);
+                }
+                else {
+                    self.STATE.PAGE_BUFFER = self.STATE.PAGE_ADDRESS;
+                }
+                self.SET_PC(VALUE);
+            }
+            else {
+                self.INCREMENT_PC;
+                self.STATE.STATUS = U1::new(1);
+            }
         }
 
         fn RETN(&mut self) {
             self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
             if (self.STATE.CALL_LATCH.get() == 1) {
-                self.STATE.PROGRAM_COUNTER = self.STATE.SUBROUTINE_RETURN;
+                self.SET_PC(self.STATE.SUBROUTINE_RETURN);
                 self.STATE.CALL_LATCH = U1::new(0);
             }
             else {
-                self.STATE.PROGRAM_COUNTER = self.STATE.PROGRAM_COUNTER + 1;
+                self.INCREMENT_PC();
             }
 
         }
