@@ -271,11 +271,14 @@ mod TMS1000 {
         }
 
         fn TDO (&mut self) {
+            //Acc and SL transferred to O-output register
+            self.STATE.O_OUTPUT_REGISTER = U5::new(self.STATE.ACCUMULATOR.get() + (self.STATE.STATUS_LATCH.get() * 16));
 
         }
 
         fn CLO (&mut self) {
-
+            //zeroes O-register
+            self.STATE.O_OUTPUT_REGISTER = U5::new(0);
         }
 
         fn SETR (&mut self) {
