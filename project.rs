@@ -65,8 +65,13 @@ impl Add<u8> for U4 {
     }
 }
 impl Sub<u8> for U4 {
-    fn add(self, x: u8) -> Self::U4 {
-        U4((self.0 - (x % 16)) % 16);
+    fn sub(self, x: u8) -> Self::U4 {
+        if self.0 > (x % 16) {
+            U4(self.0 - (x % 16))
+        }
+        else {
+            U4(16 - ((x % 16) - self.0))
+        }
     }
 }
 
@@ -102,6 +107,21 @@ impl U6 {
 impl From<u8> for U6 {
     fn from(x: u8) -> Self {
         U6::new(x)
+    }
+}
+impl Add<u8> for U6 {
+    fn add(self, x: u8) -> Self::U6 {
+        U6((self.0 + (x % 64)) % 64);
+    }
+}
+impl Sub<u8> for U6 {
+    fn sub(self, x: u8) -> Self::U6 {
+        if self.0 > (x % 64) {
+            U6(self.0 - (x % 64))
+        }
+        else {
+            U6(64 - ((x % 64) - self.0))
+        }
     }
 }
 
@@ -240,8 +260,18 @@ mod TMS1000 {
 
         //Fixed microinstructions
 
-        fn BR (&mut self) {
+        fn BR (&mut self, U6 VALUE) {
+            if (self.STATE.STATUS_LATCH.get() == 1) {
+                if (self.STATE.STATUS.get() == 1) {
 
+                }
+                else {
+
+                }
+            }
+            else {
+                PROGRAM_COUNTER
+            }
         }
 
         fn CALL (&mut self) {
