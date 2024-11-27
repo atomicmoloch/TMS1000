@@ -28,6 +28,9 @@ impl U2 {
     fn get() -> u8 {
         self.0
     }
+    fn reverse(self) {
+        self.0 = self.0.reverse_bits() >> 6
+    }
 }
 impl From<u8> for U2 {
     fn from(x: u8) -> Self {
@@ -295,12 +298,23 @@ mod TMS1000 {
             }
         }
 
-        fn SBIT (&mut self) {
-
+        //Bit manipulation instructions for using bits as "flags"
+        fn SBIT (&mut self, U2 BIT) {
+            //sets BIT of RAM(X,Y) to 1
+            let BIT_U8 = BIT.reverse().get();
+            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER, self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
+            if !(IS_SET) {
+                self.STATE.RAM_ARRAY[self.STATE.X_REGISTER, self.STATE.Y_REGISTER] = U4::new(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER, self.STATE.Y_REGISTER].get() + (1_u8 << BIT_U8));
+            }
         }
 
         fn RBIT (&mut self) {
-
+            //sets BIT of RAM(X,Y) to 0
+            let BIT_U8 = BIT.reverse().get();
+            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER, self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
+            if (IS_SET) {
+                self.STATE.RAM_ARRAY[self.STATE.X_REGISTER, self.STATE.Y_REGISTER] = U4::new(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER, self.STATE.Y_REGISTER].get() - (1_u8 << BIT_U8));
+            }
         }
 
         //Programmable microinstructions
