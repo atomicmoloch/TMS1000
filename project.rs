@@ -264,7 +264,8 @@ mod TMS1000 {
         }
 
         fn COMX (&mut self) {
-
+            //Should flip bits of X register (1s compliment)
+            self.STATE.X_REGISTER = U2::new(self.STATE.X_REGISTER - 3);
         }
 
         fn TDO (&mut self) {
