@@ -261,16 +261,18 @@ mod TMS1000 {
         //Fixed microinstructions
 
         fn BR (&mut self, U6 VALUE) {
-            if (self.STATE.STATUS_LATCH.get() == 1) {
-                if (self.STATE.STATUS.get() == 1) {
-
+            //Branch instruction
+            //On status: changes PC to br value and if call latch not active, moved PB to PA
+            //If not status: increments PC and changes status to 1
+            if (self.STATE.STATUS.get() == 1) {
+                if (self.STATE.CALL_LATCH.get() == 0) {
+                    self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
                 }
-                else {
-
-                }
+                self.STATE.PROGRAM_COUNTER = VALUE;
             }
             else {
-                PROGRAM_COUNTER
+                self.STATE.PROGRAM_COUNTER = self.STATE.PROGRAM_COUNTER + 1;
+                self.STATE.STATUS = U1::new(1);
             }
         }
 
