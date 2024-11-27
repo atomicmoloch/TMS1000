@@ -1,3 +1,5 @@
+use std::ops::{Add, Sub};
+
 //1 bit unsigned integer
 //Implemented with unnecessary complexity as a struct
 //in order to maintain consistency with u4, u6
@@ -54,6 +56,17 @@ impl From<u8> for U4 {
         U4::new(x)
     }
 }
+impl Add<u8> for U4 {
+    fn add(self, x: u8) -> Self::U4 {
+        U4((self.0 + (x % 16)) % 16);
+    }
+}
+impl Sub<u8> for U4 {
+    fn add(self, x: u8) -> Self::U4 {
+        U4((self.0 - (x % 16)) % 16);
+    }
+}
+
 
 //5 bit unsigned integer
 #[derive(Clone)]
@@ -230,9 +243,20 @@ mod TMS1000 {
 
         }
 
+        fn RETN(&mut self) {
+            self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
+            if (self.STATE.CALL_LATCH.get() == 1) {
+                self.STATE.PROGRAM_COUNTER = self.STATE.SUBROUTINE_RETURN;
+                self.STATE.CALL_LATCH = U1::new(0);
+            }
+            else {
+                self.STATE.PROGRAM_COUNTER = self.STATE.PROGRAM_COUNTER + 1;
+            }
+
+        }
+
         fn LDP (&mut self, U4 VALUE) {
             self.STATE.PAGE_BUFFER = VALUE.reverse(); //MSB on right
-
         }
 
         fn LDX(&mut self, U2 VALUE) {
