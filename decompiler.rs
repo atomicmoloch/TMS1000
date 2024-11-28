@@ -11,6 +11,10 @@ fn reversebits_u4(value : u8) -> u8 {
     return value.reverse_bits() >> 4;
 }
 
+fn reversebits_u2(value : u8) -> u8 {
+    return value.reverse_bits() >> 2;
+}
+
 
 fn decodeinstruction(instruction : u8) -> String{
     match instruction {
@@ -47,11 +51,21 @@ fn decodeinstruction(instruction : u8) -> String{
         0x2D => return String::from("CPAIZ"),
         0x2E => return String::from("XMA"),
         0x2F => return String::from("CLA"),
-        _ => return instruction.to_string(),
+        0x30..=0x33 => return String::from("SBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
+        0x34..=0x37 => return String::from("RBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
+        0x38..=0x3A => return String::from("TBIT 1 ".to_owned() + &(reversebits_u2(instruction)).to_string()),
+        0x3B..=0x3F => return String::from("LDX ".to_owned() + &(reversebits_u2(instruction)).to_string()),
+        0x40..=0x4F => return String::from("TCY ".to_owned() + &(reversebits_u4(instruction)).to_string()),
+        0x50..=0x5F => return String::from("YNEC ".to_owned() + &(reversebits_u4(instruction)).to_string()),
+        0x60..=0x6F => return String::from("TCMIY ".to_owned() + &(reversebits_u4(instruction)).to_string()),
+        0x70..=0x7F => return String::from("ALEC ".to_owned() + &(reversebits_u4(instruction)).to_string()),
+        0x80..=0xBF => return String::from("BR ".to_owned() + &(instruction % 64).to_string() + " (" + &(PC_SEQ.iter().position(|&i| i == (instruction % 64)).unwrap()).to_string() + ")"),
+        0xC0..=0xFF => return String::from("CALL ".to_owned() + &(instruction % 64).to_string() + " (" + &(PC_SEQ.iter().position(|&i| i == (instruction % 64)).unwrap()).to_string() + ")"),
+      //  _ => return instruction.to_string(),
     }
 }
 
-fn decompile(filename : &'static str)
+fn decompile(filename : &'static str) -> [String; 64 * 16]
 {
     let file = File::open(filename);
     let mut data: Vec<u8> = vec![];
@@ -71,9 +85,13 @@ fn decompile(filename : &'static str)
             pavalue += 1;
         }
     }
-    println!("{:?}", results);
+    return results;
 }
 
 fn main() {
-    decompile("simon.bin");
+  //  let src = decompile("simon.bin");
+    let src = decompile("mp3300.bin");
+    for (idx, val) in src.iter().enumerate() {
+        println!("{idx} - {val}");
+    }
 }
