@@ -9,5 +9,5 @@ Does not presently compile; have been rapidly prototyping architechture.
 
 decompiler.rs:
 The code decompiles binary ROM dumps from TMS1000 microcontrollers into assembly source code
-If you are reading this, I am about to resubmit the thesis check-in assignment.
+If you are reading this, I am about to resubmit the thesis check-in assignment - I have not finished the decompiler and this documentation is incomplete.
 
