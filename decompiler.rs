@@ -12,7 +12,7 @@ fn reversebits_u4(value : u8) -> u8 {
 }
 
 fn reversebits_u2(value : u8) -> u8 {
-    return value.reverse_bits() >> 2;
+    return value.reverse_bits() >> 6;
 }
 
 
@@ -92,6 +92,6 @@ fn main() {
   //  let src = decompile("simon.bin");
     let src = decompile("mp3300.bin");
     for (idx, val) in src.iter().enumerate() {
-        println!("{idx} - {val}");
+        println!("{} - {val}", idx % 64);
     }
 }
