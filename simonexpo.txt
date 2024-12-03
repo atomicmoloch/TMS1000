@@ -1,0 +1,13 @@
+Simon SRC
+
+PROGRAM START:
+0 - 15 : 0 CLO: Clears output registers
+1 - 15 : 1 CLA: Clears accumulator (sets to 0)
+2 - 15 : 3 LDX 3: Loads 3 in x register
+3 - 15 : 7 TCY 15: Loads 15 in y register - this functions by sending a constant to adder P-input using the CKI multiplexxor, then diverting the accumulator output to Y (AUTY)
+4 - 15 : 15 RSTR: Zeroes R outputs
+5 - 15 : 31 TAM: Transfer accumulator to memory location
+6 - 15 : 63 DYN: Y register decremented, 1 to status if no carry. This sends Y to the P-input using the CKI multiplexxor, 15 to the adder N-input, sends the carry to status, and the adder result to the Y register
+7 - 15 : 62 BR 15 (4): Branches to 15 (4)
+-- Loop will continue until Y is decremented to 0
+-- Every iteration will load the accumulator register's value (0) into RAM location 3:Y. As the TMS1000 doesn't guarentee that the RAM will be cleared at power-on, this block of code seems to be present to ensure that
