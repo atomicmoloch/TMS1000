@@ -55,7 +55,7 @@ mod TMS1000 {
         RAM_ARRAY: [[u8; 16]; 4],
 
         CKI_VALUE: u8, //u4; Value outputted by CKI bus. Varies (is set) based on opcode, independently of instruction executed
-        P_MUX_LOGIC: u8, //u4, P-MUX: Data multiplexxer. Selects input to adder from RAM, CKI, or Y (0, 1, or 2)
+        P_MUX_LOGIC: u8, //u4, P-MUX: Data multiplexxer. Selects input to adder from Y register, CKI logic, or RAM array (0, 1, or 2)
         N_MUX_LOGIC: u8,//u5, N-MUX: Data multiplexxer. Selects N input to adder (0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
 
         ACCUMULATOR: u8, //U4 A, storage register
@@ -64,13 +64,15 @@ mod TMS1000 {
         STATUS_LATCH: u8, //1-bit SL, latch, selectively stores status output. Transfers to O register w/ acc bits when TDO is executed
 
         //Outputs:
-        R_OUTPUT: [u8; 11], //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix.
+        R_OUTPUT: [u8; 11], //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix. Using u8 instead of bool here costs a little memory but maintains consistency with the rest of the conventions. May change later.
         O_OUTPUT: u8, //U5, O output register. Used to transmit data
+
+        K_INPUT: [u8; 4], //K input registers, K1, K2, K4, and K8
     }
 
     impl SYSTEM_STATE {
         fn ToString(&self) -> String {
-            "{Self.X_REGISTER}\n{Self.Y_REGISTER}\n{Self.X_REGISTER}\n{Self.PROGRAM_COUNTER}\n{Self.PC_INDEX}\n{Self.SUBROUTINE_RETURN}\n{Self.PAGE_ADDRESS}\n{Self.PAGE_BUFFER}\n{Self.CALL_LATCH}\n{Self.RAM_ARRAY}\n{Self.CKI_VALUE}\n{Self.P_MUX_LOGIC}\n{Self.N_MUX_LOGIC}\n{Self.ACCUMULATOR}\n{Self.ADDER_INC}\n{Self.STATUS}\n{Self.STATUS_LATCH}\n{Self.R_OUTPUT}\n{Self.O_OUTPUT}".to_string()
+            "{self.STATE.X_REGISTER}\n{self.STATE.Y_REGISTER}\n{self.STATE.X_REGISTER}\n{self.STATE.PROGRAM_COUNTER}\n{self.STATE.PC_INDEX}\n{self.STATE.SUBROUTINE_RETURN}\n{self.STATE.PAGE_ADDRESS}\n{self.STATE.PAGE_BUFFER}\n{self.STATE.CALL_LATCH}\n{self.STATE.RAM_ARRAY}\n{self.STATE.CKI_VALUE}\n{self.STATE.P_MUX_LOGIC}\n{self.STATE.N_MUX_LOGIC}\n{self.STATE.ACCUMULATOR}\n{self.STATE.ADDER_INC}\n{self.STATE.STATUS}\n{self.STATE.STATUS_LATCH}\n{self.STATE.R_OUTPUT}\n{self.STATE.O_OUTPUT}\n{self.STATE.K_INPUT}".to_string()
         }
 
     }
@@ -87,10 +89,18 @@ mod TMS1000 {
     impl SYSTEM {
 
 
-        //Replicates INIT pin behavior
-    //    fn INITIALIZE() -> SYSTEM_STATE {
 
-    //    }
+
+        //Replicates INIT pin behavior
+        fn INITIALIZE(&mut self) {
+            self.STATE.PAGE_ADDRESS = 15;
+            self.STATE.PAGE_BUFFER = 15;
+            self.STATE.PROGRAM_COUNTER = 0;
+            self.STATE.PC_INDEX = 0;
+            self.STATE.R_OUTPUT = [0; 11];
+            self.STATE.O_OUTPUT = 0;
+            self.STATE.CALL_LATCH = 0;
+        }
 
         fn LoadSystem(rom_file : &'static str) -> Self {
             let mut sys = SYSTEM {
@@ -105,14 +115,15 @@ mod TMS1000 {
                     O_OUTPUT: 0,
                     STATUS: 1,
                     ADDER_INC: 0,
+                    K_INPUT: [0; 4],
                     RAM_ARRAY: [[255; 16]; 4], //this and all below are set to an invalid value, must be properly initialized by code
                     X_REGISTER: 255,
                     Y_REGISTER: 255,
                     STATUS_LATCH: 255,
                     ACCUMULATOR: 255,
                     CKI_VALUE: 255,
-                    P_MUX_LOGIC: 255,
-                    N_MUX_LOGIC: 255,
+                    P_MUX_LOGIC: 0, //There are theoretical very niche circumstances when a valid value for these would be necessary and desirable
+                    N_MUX_LOGIC: 0,
                 },
                 ROM_ARRAY: vec![],
             };
