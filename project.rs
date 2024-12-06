@@ -125,6 +125,19 @@ impl Sub<u8> for U6 {
     }
 }
 
+fn u4(value : u8) -> u8 {
+    return value % 16;
+}
+
+fn reversebits_u4(value : u8) -> u8 {
+    return value.reverse_bits() >> 4;
+}
+
+fn reversebits_u2(value : u8) -> u8 {
+    return value.reverse_bits() >> 6;
+}
+
+
 
 //power up latch (not shown on diagram)
 
@@ -165,8 +178,8 @@ mod TMS1000 {
    //     WRITE_MUX_LOGIC: U2, //data selector; selects either constant and K inputs or acc for writing into ram, also performs bit setting & resetting
         // actually unnecessary
 
-        CKI_LOGIC: U4, //CKI, data multiplexxer; selects either constant field, k input to enter cki data bus, or bit mask
-        CKI_CONSTANT: U4,
+
+        CKI_VALUE: U4,
 
         //au_select ; //data selector; selects destination of adder output to Y reg, acc, or neither //unnecessary
 
@@ -454,6 +467,17 @@ mod TMS1000 {
 
         fn STSL(&mut self) {
             self.STATE.STATUS_LATCH = self.STATE.STATUS;
+        }
+
+        fn CKI_LOGIC(&mut self, u8 INSTRUCTION) {
+            match INSTRUCTION {
+                0x00..=0x07 => self.STATE.CKI_VALUE = reversebits_u4(INSTRUCTION), //constant
+                0x08..=0x0F => self.STATE.CKI_VALUE = self.STATE.K_INPUT;
+                0x20..=0x2F => self.STATE.CKI_VALUE = 0,
+                0x30..=0x3A => self.STATE.CKI_VALUE = 15 - reversebits_u2(INSTRUCTION), //bit mask
+                0x40..=0x7F => self.STATE.CKI_VALUE = reversebits_u4(INSTRUCTION),
+                _ => {} //does nothing on LDP, LDX, BR and CALL instructions
+            }
         }
 
     }
