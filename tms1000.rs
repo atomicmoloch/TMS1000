@@ -38,6 +38,7 @@ fn reversebits_u2(value : u8) -> u8 {
 mod TMS1000 {
     use std::fs::File;
     use std::io::Read;
+    use std::collections::HashMap;
     struct SYSTEM_STATE {
         X_REGISTER: u8, //U2 X, storage register; ram page address
         Y_REGISTER: u8, //U4 Y, storage register; ram word address and R output address
@@ -78,15 +79,16 @@ mod TMS1000 {
     }
 
 
-    struct SYSTEM {
+    struct SYSTEM<'a> {
         STATE: SYSTEM_STATE,
         ROM_ARRAY: Vec<u8>,
+        INSTRUCTION_PLA: HashMap<u8, Vec<&'a dyn Fn(&mut SYSTEM_STATE, u8)>>,
      //   PC_SEQ: [U6; 64], not sure if changable
         //Output PLA
         //Instruction decode PLA
     }
 
-    impl SYSTEM {
+    impl SYSTEM<'_> {
 
 
 
@@ -126,6 +128,7 @@ mod TMS1000 {
                     N_MUX_LOGIC: 0,
                 },
                 ROM_ARRAY: vec![],
+                INSTRUCTION_PLA: HashMap::new(),
             };
 
             let file = File::open(rom_file);
