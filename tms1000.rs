@@ -79,7 +79,7 @@ mod TMS1000 {
     }
 
 
-    struct SYSTEM<'a> {
+    pub struct SYSTEM<'a> {
         STATE: SYSTEM_STATE,
         ROM_ARRAY: Vec<u8>,
         INSTRUCTION_PLA: HashMap<u8, Vec<&'a dyn Fn(&mut SYSTEM_STATE, u8)>>,
@@ -104,7 +104,7 @@ mod TMS1000 {
             self.STATE.CALL_LATCH = 0;
         }
 
-        fn LoadSystem(rom_file : &'static str) -> Self {
+        pub fn LoadSystem(rom_file : &'static str, ipla_file : &'static str) -> Self {
             let mut sys = SYSTEM {
                 STATE: SYSTEM_STATE {
                     PROGRAM_COUNTER: 0,
@@ -131,8 +131,19 @@ mod TMS1000 {
                 INSTRUCTION_PLA: HashMap::new(),
             };
 
-            let file = File::open(rom_file);
-            let _ = file.expect("REASON").read_to_end(&mut sys.ROM_ARRAY);
+            let rFile = File::open(rom_file);
+            let _ = rFile.expect("REASON").read_to_end(&mut sys.ROM_ARRAY);
+
+            let ipFile = File::open(ipla_file);
+            let mut ipData: Vec<u8> = vec![];
+            let _ = ipFile.expect("REASON").read_to_end(&mut ipData);
+
+            for w in ipData.windows(4) {
+                for i in w {
+                println!("{i}");
+                }
+                println!("break");
+            }
 
             return sys;
         }
@@ -142,6 +153,6 @@ mod TMS1000 {
 
 
 fn main() {
-
+    let _ = TMS1000::SYSTEM::LoadSystem("mp3300.bin", "mp3300.bin");
 
 }
