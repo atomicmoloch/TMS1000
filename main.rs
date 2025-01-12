@@ -169,6 +169,11 @@ mod TMS1000 {
             }
         }
 
+        fn ADDER(&mut self) -> (u8, u8) {
+            let value = self.P_MUX() + self.N_MUX() + self.STATE.ADDER_INC;
+            return (u1(value >> 4 & 1), u4(value));
+        }
+
         fn INCREMENT_PC(&mut self) {
             self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX + 1);
             self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
@@ -185,8 +190,9 @@ mod TMS1000 {
         }
 
     //Microinstructions
+
+        //Branch on status = one
         fn BR (&mut self) {
-            //Branch instruction
             //On status: changes PC to br value and if call latch not active, moved PB to PA
             //If not status: increments PC and changes status to 1
             if (self.STATE.STATUS == 1) {
@@ -198,8 +204,8 @@ mod TMS1000 {
             }
         }
 
+        //Call subroutine on status = one
         fn CALL (&mut self) {
-            //CALL SUBROUTINE instruction
             if (self.STATE.STATUS == 1) {
                 if (self.STATE.CALL_LATCH == 0) {
                     self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX]; //removed the +1 for now, expecting Step to increment after RETN calls
@@ -213,6 +219,7 @@ mod TMS1000 {
             }
         }
 
+        //Return from subroutine
         fn RETN(&mut self, _ : u8) {
             self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
             if (self.STATE.CALL_LATCH == 1) {
@@ -224,29 +231,35 @@ mod TMS1000 {
             }
         }
 
+        //Load page buffer with constant
         fn LDP (&mut self) {
             self.STATE.PAGE_BUFFER = reversebits_u4(self.STATE.INSTRUCTION); //MSB on right
         }
 
+        //Load X register with constant
         fn LDX(&mut self) {
             self.STATE.X_REGISTER = reversebits_u2(self.STATE.INSTRUCTION) as usize;
         }
 
+        //Complement X
         fn COMX (&mut self) {
             //Should flip bits of X register (1s compliment)
             self.STATE.X_REGISTER = u2_usize(self.STATE.X_REGISTER - 3);
         }
 
+        //Transfer data from accumulator and status latch to O outputs
         fn TDO (&mut self) {
             //Acc and SL transferred to O-output register
-            self.STATE.O_OUTPUT = u5(self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH * 16));
+            self.STATE.O_OUTPUT = u5(self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH << 4));
         }
 
+        //Clear O-output register
         fn CLO (&mut self) {
             //zeroes O-register
             self.STATE.O_OUTPUT = 0;
         }
 
+        //Set R output addressed by Y
         fn SETR (&mut self) {
             //sets R(Y) to 1; if Y out of range, no-op
             if (self.STATE.Y_REGISTER <= 10) {
@@ -254,6 +267,7 @@ mod TMS1000 {
             }
         }
 
+        //Reset R output addressed by Y
         fn RSTR (&mut self) {
             //sets R(Y) to 0; if Y out of range, no-op
             if (self.STATE.Y_REGISTER <= 10) {
@@ -261,6 +275,7 @@ mod TMS1000 {
             }
         }
 
+        //Set memory bit
         fn SBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 1
             let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
@@ -270,6 +285,7 @@ mod TMS1000 {
             }
         }
 
+        //Reset memory bit
         fn RBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 0
             let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
@@ -281,38 +297,98 @@ mod TMS1000 {
 
         //P-MUX instructions
 
+        //CKI to P-adder input
         fn CKP(&mut self) {
             self.STATE.P_MUX_LOGIC = 1;
         }
 
+        //Y-register to P-adder input
         fn YTP(&mut self) {
             self.STATE.P_MUX_LOGIC = 0;
         }
 
+        //Memory (X, Y) to N-adder input
         fn MTP(&mut self) {
             self.STATE.P_MUX_LOGIC = 2;
         }
 
         //N-MUX instructions
 
+        //Accumulator to N-adder input
         fn ATN(&mut self) {
             self.STATE.N_MUX_LOGIC = 2;
         }
 
+        //not-accumulator to N-adder input
         fn NATN(&mut self) {
             self.STATE.N_MUX_LOGIC = 3;
         }
 
+        //Memory (X, Y) to N-adder input
         fn MTN(&mut self) {
             self.STATE.N_MUX_LOGIC = 0;
         }
 
+        //F16 to N-adder input
         fn _15TN(&mut self) { //_ required to parse as function
             self.STATE.N_MUX_LOGIC = 4;
         }
 
+        //CKI to N-adder input
         fn CKN(&mut self) {
             self.STATE.N_MUX_LOGIC = 1;
+        }
+
+
+        //Adder/status instructions
+
+        //One is added to the sum of P plus N inputs (P + N + 1)
+        fn CIN(&mut self) {
+            self.STATE.ADDER_INC = 1;
+        }
+
+        //Adder compares P and N inputs. If they are identical, status is set to zero
+        fn NE(&mut self) {
+            if (self.N_MUX() == self.P_MUX()) {
+                self.STATE.STATUS = 0;
+            }
+            else {
+                self.STATE.STATUS = 1;
+            }
+        }
+
+        //Carry is sent to status (MSB only)
+        fn C8(&mut self) {
+            self.STATE.STATUS = self.ADDER().0;
+        }
+
+        //Write MUX instructions
+
+        //Accumulator data to memory
+        fn STO(&mut self) {
+            self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
+        }
+
+        //CKI to memory
+        fn CKM(&mut self) {
+            self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.CKI();
+        }
+
+        //AU Select/Status latch instructions
+
+        //Adder result stored into accumulator
+        fn AUTA(&mut self) {
+            self.STATE.ACCUMULATOR = self.ADDER().1;
+        }
+
+        //Adder result stored into Y-register
+        fn AUTY(&mut self) {
+            self.STATE.Y_REGISTER = self.ADDER().1 as usize;
+        }
+
+        //Status is stored into status latch
+        fn STSL(&mut self) {
+            self.STATE.STATUS_LATCH = self.STATE.STATUS;
         }
 
     //Instruction PLA and decoding
