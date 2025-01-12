@@ -84,6 +84,8 @@ mod TMS1000 {
 //Main body
 
     struct SYSTEM_STATE {
+        INSTRUCTION: u8, //u8 current instruction
+
         X_REGISTER: usize, //U2 X, storage register; ram page address
         Y_REGISTER: usize, //U4 Y, storage register; ram word address and R output address
 
@@ -99,7 +101,6 @@ mod TMS1000 {
         //four files with 16 * U4 each
         RAM_ARRAY: [[u8; 16]; 4],
 
-        CKI_VALUE: u8, //u4; Value outputted by CKI bus. Varies (is set) based on opcode, independently of instruction executed
         P_MUX_LOGIC: u8, //u4, P-MUX: Data multiplexxer. Selects input to adder from Y register, CKI logic, or RAM array (0, 1, or 2)
         N_MUX_LOGIC: u8,//u5, N-MUX: Data multiplexxer. Selects N input to adder (0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
 
@@ -112,7 +113,7 @@ mod TMS1000 {
         R_OUTPUT: [u8; 11], //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix. Using u8 instead of bool here costs a little memory but maintains consistency with the rest of the conventions. May change later.
         O_OUTPUT: u8, //U5, O output register. Used to transmit data
 
-        K_INPUT: [u8; 4], //K input registers, K1, K2, K4, and K8
+        K_INPUT: u8, //K input registers, K1, K2, K4, and K8
     }
 
     impl SYSTEM_STATE {
@@ -134,7 +135,40 @@ mod TMS1000 {
 
     impl SYSTEM {
 
-    //Microinstructions
+    //System components
+
+        fn CKI(&mut self) -> u8 {
+            //selects either constant field, k input to enter cki data bus, or bit mask
+            match self.STATE.INSTRUCTION {
+                0x00..=0x07 => return reversebits_u4(self.STATE.INSTRUCTION), //constant
+                0x08..=0x0F => return self.STATE.K_INPUT,
+                0x20..=0x2F => return 0,
+                0x30..=0x3A => return 15 - reversebits_u2(self.STATE.INSTRUCTION), //bit mask
+                0x40..=0x7F => return reversebits_u4(self.STATE.INSTRUCTION),
+                _ => return 255, //does nothing on LDP, LDX, BR and CALL instructions
+            }
+        }
+
+        fn P_MUX(&mut self) -> u8 {
+        //(0) Y register, (1) CKI, (2) RAM page
+            match self.STATE.N_MUX_LOGIC {
+                0 => return self.STATE.Y_REGISTER as u8,
+                1 => return self.CKI(),
+                _ => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+            }
+        }
+
+        fn N_MUX(&mut self) -> u8 {
+        //(0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
+            match self.STATE.P_MUX_LOGIC {
+                0 => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+                1 => return self.CKI(),
+                2 => return self.STATE.ACCUMULATOR,
+                3 => return u4(1 + !(self.STATE.ACCUMULATOR)),
+                _ => return 15,
+            }
+        }
+
         fn INCREMENT_PC(&mut self) {
             self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX + 1);
             self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
@@ -150,7 +184,8 @@ mod TMS1000 {
             self.STATE.PC_INDEX = PC_SEQ.iter().position(|&i| i == value).unwrap(); //this should be guarenteed; thus the use of unwrap()
         }
 
-        fn BR (&mut self, instruction : u8) {
+    //Microinstructions
+        fn BR (&mut self) {
             //Branch instruction
             //On status: changes PC to br value and if call latch not active, moved PB to PA
             //If not status: increments PC and changes status to 1
@@ -158,12 +193,12 @@ mod TMS1000 {
                 if (self.STATE.CALL_LATCH == 0) {
                     self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
                 }
-                self.SET_PC(u6(instruction));
+                self.SET_PC(u6(self.STATE.INSTRUCTION));
                 self.DECREMENT_PC(); //Since Step() will increment it again
             }
         }
 
-        fn CALL (&mut self, instruction : u8) {
+        fn CALL (&mut self) {
             //CALL SUBROUTINE instruction
             if (self.STATE.STATUS == 1) {
                 if (self.STATE.CALL_LATCH == 0) {
@@ -173,7 +208,7 @@ mod TMS1000 {
                 else {
                     self.STATE.PAGE_BUFFER = self.STATE.PAGE_ADDRESS;
                 }
-                self.SET_PC(u6(instruction));
+                self.SET_PC(u6(self.STATE.INSTRUCTION));
                 self.DECREMENT_PC();
             }
         }
@@ -189,60 +224,97 @@ mod TMS1000 {
             }
         }
 
-        fn LDP (&mut self, instruction : u8) {
-            self.STATE.PAGE_BUFFER = reversebits_u4(instruction); //MSB on right
+        fn LDP (&mut self) {
+            self.STATE.PAGE_BUFFER = reversebits_u4(self.STATE.INSTRUCTION); //MSB on right
         }
 
-        fn LDX(&mut self, instruction : u8) {
-            self.STATE.X_REGISTER = reversebits_u2(instruction) as usize;
+        fn LDX(&mut self) {
+            self.STATE.X_REGISTER = reversebits_u2(self.STATE.INSTRUCTION) as usize;
         }
 
-        fn COMX (&mut self, instruction : u8) {
+        fn COMX (&mut self) {
             //Should flip bits of X register (1s compliment)
             self.STATE.X_REGISTER = u2_usize(self.STATE.X_REGISTER - 3);
         }
 
-        fn TDO (&mut self, _ : u8) {
+        fn TDO (&mut self) {
             //Acc and SL transferred to O-output register
             self.STATE.O_OUTPUT = u5(self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH * 16));
         }
 
-        fn CLO (&mut self, _ : u8) {
+        fn CLO (&mut self) {
             //zeroes O-register
             self.STATE.O_OUTPUT = 0;
         }
 
-        fn SETR (&mut self, _ : u8) {
+        fn SETR (&mut self) {
             //sets R(Y) to 1; if Y out of range, no-op
             if (self.STATE.Y_REGISTER <= 10) {
                 self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 1;
             }
         }
 
-        fn RSTR (&mut self, _ : u8) {
+        fn RSTR (&mut self) {
             //sets R(Y) to 0; if Y out of range, no-op
             if (self.STATE.Y_REGISTER <= 10) {
                 self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 0;
             }
         }
 
-        fn SBIT (&mut self, instruction : u8) {
+        fn SBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 1
-            let BIT_U8 = reversebits_u2(instruction);
+            let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
             let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
             if !(IS_SET) {
                 self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] + (1_u8 << BIT_U8));
             }
         }
 
-        fn RBIT (&mut self, instruction : u8) {
+        fn RBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 0
-            let BIT_U8 = reversebits_u2(instruction);
+            let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
             let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
             if (IS_SET) {
                 self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] - (1_u8 << BIT_U8));
             }
         }
+
+        //P-MUX instructions
+
+        fn CKP(&mut self) {
+            self.STATE.P_MUX_LOGIC = 1;
+        }
+
+        fn YTP(&mut self) {
+            self.STATE.P_MUX_LOGIC = 0;
+        }
+
+        fn MTP(&mut self) {
+            self.STATE.P_MUX_LOGIC = 2;
+        }
+
+        //N-MUX instructions
+
+        fn ATN(&mut self) {
+            self.STATE.N_MUX_LOGIC = 2;
+        }
+
+        fn NATN(&mut self) {
+            self.STATE.N_MUX_LOGIC = 3;
+        }
+
+        fn MTN(&mut self) {
+            self.STATE.N_MUX_LOGIC = 0;
+        }
+
+        fn _15TN(&mut self) { //_ required to parse as function
+            self.STATE.N_MUX_LOGIC = 4;
+        }
+
+        fn CKN(&mut self) {
+            self.STATE.N_MUX_LOGIC = 1;
+        }
+
     //Instruction PLA and decoding
 
     //Hardware meta-instructions
@@ -323,6 +395,7 @@ mod TMS1000 {
             let mut sys = SYSTEM {
                 VERSION: version,
                 STATE: SYSTEM_STATE {
+                    INSTRUCTION : 0,
                     PROGRAM_COUNTER: 0,
                     PC_INDEX: 0,
                     SUBROUTINE_RETURN : 0,
@@ -333,13 +406,12 @@ mod TMS1000 {
                     O_OUTPUT: 0,
                     STATUS: 1,
                     ADDER_INC: 0,
-                    K_INPUT: [0; 4],
+                    K_INPUT: 0,
                     RAM_ARRAY: [[255; 16]; 4], //this and all below are set to an invalid value, must be properly initialized by code
                     X_REGISTER: 255,
                     Y_REGISTER: 255,
                     STATUS_LATCH: 255,
                     ACCUMULATOR: 255,
-                    CKI_VALUE: 255,
                     P_MUX_LOGIC: 0, //There are theoretical very niche circumstances when a valid value for these would be necessary and desirable - but it's undefined and bad coding
                     N_MUX_LOGIC: 0,
                 },
