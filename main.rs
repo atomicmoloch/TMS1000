@@ -393,6 +393,16 @@ mod TMS1000 {
 
     //Instruction PLA and decoding
 
+        const TMS1000_instructions : [fn(&mut SYSTEM); 16] = [SYSTEM::STO, SYSTEM::CKM, SYSTEM::CKP, SYSTEM::YTP, SYSTEM::MTP, SYSTEM::ATN, SYSTEM::NATN, SYSTEM::MTN, SYSTEM::_15TN, SYSTEM::CKN, SYSTEM::NE, SYSTEM::C8, SYSTEM::CIN, SYSTEM::AUTA, SYSTEM::AUTY, SYSTEM::STSL];
+        const TMS1000_mask : u32 = 0b1100000001110111;
+
+
+        fn decode_instruction(&mut self) {
+            self.STATE.INSTRUCTION = self.ROM_ARRAY[(64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
+
+        }
+
+
     //Hardware meta-instructions
         //Replicates INIT pin behavior
         fn INITIALIZE(&mut self) {
@@ -447,7 +457,7 @@ mod TMS1000 {
             Ok(pla_table)
         }
 
-        pub fn LoadSystem(version: u32, rom_file : &'static str, ipla_file : &'static str, opla_file : &'static str) -> Result<Self, &'static str> {
+        pub fn load_system(version: u32, rom_file : &'static str, ipla_file : &'static str, opla_file : &'static str) -> Result<Self, &'static str> {
 
             let iPLA = match Self::read_PLA(ipla_file) {
                             Ok(v) => v,
@@ -504,7 +514,7 @@ mod TMS1000 {
 
 
 fn main() {
-     let _ = match TMS1000::SYSTEM::LoadSystem(1000, "/home/moloch/Documents/thesis/tms/src/mp3300.bin", "/home/moloch/Documents/thesis/tms/src/tms1100_merlin_mpla.pla", "/home/moloch/Documents/thesis/tms/src/tms1100_merlin_opla.pla") {
+     let _ = match TMS1000::SYSTEM::load_system(1000, "/home/moloch/Documents/thesis/tms/src/mp3300.bin", "/home/moloch/Documents/thesis/tms/src/tms1100_merlin_mpla.pla", "/home/moloch/Documents/thesis/tms/src/tms1100_merlin_opla.pla") {
         Ok(v) => println!("Success"),
         Err(e) => println!("{}", e),
     };
