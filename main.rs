@@ -107,6 +107,7 @@ mod TMS1000 {
         ACCUMULATOR: u8, //U4 A, storage register
         ADDER_INC: u8, //u1 - whether to increment the adder - set by C8 microinstruction and should be reset to 0 every cycle
         STATUS: u8, //1-bit S, gates. conditional branch control. Normal state - 1. Branches are taken if S = 1. Selectively outputs a zero when carry is false or when logical compare is true. A zero lasts for one instruction cycle only.
+        STATUS_LIFETIME : u8, //Facilitates Status, as described above
         STATUS_LATCH: u8, //1-bit SL, latch, selectively stores status output. Transfers to O register w/ acc bits when TDO is executed
 
         //Outputs:
@@ -355,11 +356,13 @@ mod TMS1000 {
             else {
                 self.STATE.STATUS = 1;
             }
+            self.STATE.STATUS_LIFETIME = 1 - self.STATE.STATUS;
         }
 
         //Carry is sent to status (MSB only)
         fn C8(&mut self) {
             self.STATE.STATUS = self.ADDER().0;
+            self.STATE.STATUS_LIFETIME = 1 - self.STATE.STATUS;
         }
 
         //Write MUX instructions
@@ -391,19 +394,52 @@ mod TMS1000 {
             self.STATE.STATUS_LATCH = self.STATE.STATUS;
         }
 
+    //Hardware meta-instructions
     //Instruction PLA and decoding
 
         const TMS1000_instructions : [fn(&mut SYSTEM); 16] = [SYSTEM::STO, SYSTEM::CKM, SYSTEM::CKP, SYSTEM::YTP, SYSTEM::MTP, SYSTEM::ATN, SYSTEM::NATN, SYSTEM::MTN, SYSTEM::_15TN, SYSTEM::CKN, SYSTEM::NE, SYSTEM::C8, SYSTEM::CIN, SYSTEM::AUTA, SYSTEM::AUTY, SYSTEM::STSL];
-        const TMS1000_mask : u32 = 0b1100000001110111;
+        const TMS1000_mask : u32 = 0b0011111111001000;
 
 
+        //The following function urgently needs debugging
         fn decode_instruction(&mut self) {
             self.STATE.INSTRUCTION = self.ROM_ARRAY[(64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
+            let pla_output : u32 = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
+                Some(output) => *output ^ SYSTEM::TMS1000_mask,
+                None => 0 //Should not happen with a properly designed PLA, but mimics hardware functionality
+            });
+            for i in 2..12 {
+                if (pla_output & (1 << i) != 0) {
+                    SYSTEM::TMS1000_instructions[i](self);
+                }
+
+            }
+            for i in 0..1 { //Enforces microinstruction execution order (table 2-17.2)
+                if (pla_output & (1 << i) != 0) {
+                    SYSTEM::TMS1000_instructions[i](self);
+                }
+            }
+            for i in 13..15 {
+                if (pla_output & (1 << i) != 0) {
+                    SYSTEM::TMS1000_instructions[i](self);
+                }
+            }
 
         }
 
+        fn STEP(&mut self) {
+            self.decode_instruction();
+            self.INCREMENT_PC();
+            if self.STATE.STATUS == 0 {
+                if self.STATE.STATUS_LIFETIME == 0 {
+                    self.STATE.STATUS = 1;
+                }
+                else {
+                    self.STATE.STATUS_LIFETIME -= 1;
+                }
+            }
+        }
 
-    //Hardware meta-instructions
         //Replicates INIT pin behavior
         fn INITIALIZE(&mut self) {
             self.STATE.PAGE_ADDRESS = 15;
@@ -451,7 +487,12 @@ mod TMS1000 {
                 }
 
                 for input in inputs {
-                    pla_table.insert(input, output);
+                    if !pla_table.contains_key(&input) {
+                        pla_table.insert(input, output);
+                    }
+                    else {
+                        return Err("Same input maps to multiple outputs".into());
+                    }
                 }
             }
             Ok(pla_table)
@@ -461,12 +502,12 @@ mod TMS1000 {
 
             let iPLA = match Self::read_PLA(ipla_file) {
                             Ok(v) => v,
-                            Err(_) => return Err("Problem Loading PLA"),
+                            v => return Err("Problem Loading PLA"),
             };
 
             let oPLA = match Self::read_PLA(opla_file) {
                             Ok(v) => v,
-                            Err(_) => return Err("Problem Loading PLA"),
+                            Err(v) => return Err("Problem Loading PLA"),
             };
 
             let mut rFile = match fs::File::open(rom_file) {
@@ -491,6 +532,7 @@ mod TMS1000 {
                     R_OUTPUT: [0; 11],
                     O_OUTPUT: 0,
                     STATUS: 1,
+                    STATUS_LIFETIME: 0,
                     ADDER_INC: 0,
                     K_INPUT: 0,
                     RAM_ARRAY: [[255; 16]; 4], //this and all below are set to an invalid value, must be properly initialized by code
