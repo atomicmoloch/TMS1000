@@ -452,15 +452,18 @@ mod TMS1000 {
         }
 
         //Reads PLA into a HashMap
-        fn read_PLA(filename : &'static str) -> Result<HashMap<u32, u32>, Box<dyn std::error::Error>> {
-            let data: String = fs::read_to_string(filename)?;
-            let re = Regex::new(r"([\-0-1]+) ([\-0-1]+)").unwrap();
+        fn read_PLA(filename : &'static str) -> Result<HashMap<u32, u32>, &'static str> {
+            let data: String =  match fs::read_to_string(filename) {
+                Ok(v) => v,
+                Err(_) => return Err("Problem Opening or Reading PLA file"),
+            };
+            let re = Regex::new(r"([\-0-1]+) ([\-0-1]+)").unwrap(); //Unwrapping a static valid regex should be safe
             let mut pla_table = HashMap::new();
 
             for line in re.captures_iter(&data) {
                 let mut inputs = Vec::new();
                 inputs.push(0b0);
-                let output = u32::from_str_radix(&line[2], 2).unwrap();
+                let output = u32::from_str_radix(&line[2], 2).unwrap(); //Should be guarenteed by regex
 
                 for ch in line[1].chars() {
                     if ch == '-' {
@@ -491,28 +494,32 @@ mod TMS1000 {
                         pla_table.insert(input, output);
                     }
                     else {
-                        return Err("Same input maps to multiple outputs".into());
+                        return Err("Same input maps to multiple outputs");
                     }
                 }
             }
             Ok(pla_table)
         }
 
-        pub fn load_system(version: u32, rom_file : &'static str, ipla_file : &'static str, opla_file : &'static str) -> Result<Self, &'static str> {
+        pub fn load_system(version: u32, rom_file : &'static str, ipla_file : &'static str, opla_file : &'static str) -> Result<Self, String> {
 
             let iPLA = match Self::read_PLA(ipla_file) {
-                            Ok(v) => v,
-                            v => return Err("Problem Loading PLA"),
+                Ok(v) => v,
+                Err(v) => {
+                    let e : String = "Instruction PLA error: ".to_owned() + v;
+                    return Err(e)},
             };
 
             let oPLA = match Self::read_PLA(opla_file) {
-                            Ok(v) => v,
-                            Err(v) => return Err("Problem Loading PLA"),
+                Ok(v) => v,
+                Err(v) => {
+                    let e : String = "Output PLA error: ".to_owned() + v;
+                    return Err(e)},
             };
 
             let mut rFile = match fs::File::open(rom_file) {
                 Ok(v) => v,
-                Err(_) => return Err("Problem Loading ROM"),
+                Err(_) => return Err("Problem Opening ROM File".to_owned()),
             };
 
             let mut rom_array = vec![];
