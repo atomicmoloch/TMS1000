@@ -97,9 +97,15 @@ mod TMS1000 {
         PAGE_BUFFER: u8, //U4 PB storage register, used to set up page changes. also contains 4-bit return page address during call state
         CALL_LATCH: u8, //u1, CL, latch, stores call state
 
+        //Chapter addressing for TMS1100/1300
+        //All are U1
+        CHAPTER_ADDRESS: usize, //Stores current chapter data
+        CHAPTER_BUFFER: usize, //Stores succeeding chapter data and transfers to CA pending successful execution of a subsequent branch or call instruction
+        CHAPTER_SUBROUTINE_LATCH: usize, //Stores return address after successfully executing call instruction
+
         //RAM array
         //four files with 16 * U4 each
-        RAM_ARRAY: [[u8; 16]; 4],
+        RAM_ARRAY: Vec<[[u8; 16]; 4]>,
 
         P_MUX_LOGIC: u8, //u4, P-MUX: Data multiplexxer. Selects input to adder from Y register, CKI logic, or RAM array (0, 1, or 2)
         N_MUX_LOGIC: u8,//u5, N-MUX: Data multiplexxer. Selects N input to adder (0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
@@ -111,10 +117,12 @@ mod TMS1000 {
         STATUS_LATCH: u8, //1-bit SL, latch, selectively stores status output. Transfers to O register w/ acc bits when TDO is executed
 
         //Outputs:
-        R_OUTPUT: [u8; 11], //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix. Using u8 instead of bool here costs a little memory but maintains consistency with the rest of the conventions. May change later.
+        R_OUTPUT: Vec<u8>, //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix. Using u8 instead of bool here costs a little memory but maintains consistency with the rest of the conventions. May change later.
         O_OUTPUT: u8, //U5, O output register. Used to transmit data
 
         K_INPUT: u8, //K input registers, K1, K2, K4, and K8
+        //In order to maintain persistence across instruction cycles, like an analog button press would, I thought of giving it a lifespan variable (like Status)
+        //But decided that's more germane to the physical layer
     }
 
     impl SYSTEM_STATE {
@@ -155,14 +163,14 @@ mod TMS1000 {
             match self.STATE.N_MUX_LOGIC {
                 0 => return self.STATE.Y_REGISTER as u8,
                 1 => return self.CKI(),
-                _ => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+                _ => return self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
             }
         }
 
         fn N_MUX(&mut self) -> u8 {
         //(0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
             match self.STATE.P_MUX_LOGIC {
-                0 => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+                0 => return self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
                 1 => return self.CKI(),
                 2 => return self.STATE.ACCUMULATOR,
                 3 => return u4(1 + !(self.STATE.ACCUMULATOR)),
@@ -263,7 +271,7 @@ mod TMS1000 {
         //Set R output addressed by Y
         fn SETR (&mut self) {
             //sets R(Y) to 1; if Y out of range, no-op
-            if (self.STATE.Y_REGISTER <= 10) {
+            if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) {
                 self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 1;
             }
         }
@@ -280,9 +288,9 @@ mod TMS1000 {
         fn SBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 1
             let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
-            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
+            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
             if !(IS_SET) {
-                self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] + (1_u8 << BIT_U8));
+                self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] + (1_u8 << BIT_U8));
             }
         }
 
@@ -290,9 +298,9 @@ mod TMS1000 {
         fn RBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 0
             let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
-            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
+            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
             if (IS_SET) {
-                self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] - (1_u8 << BIT_U8));
+                self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] - (1_u8 << BIT_U8));
             }
         }
 
@@ -369,12 +377,12 @@ mod TMS1000 {
 
         //Accumulator data to memory
         fn STO(&mut self) {
-            self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
+            self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
         }
 
         //CKI to memory
         fn CKM(&mut self) {
-            self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.CKI();
+            self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.CKI();
         }
 
         //AU Select/Status latch instructions
@@ -427,7 +435,10 @@ mod TMS1000 {
 
         }
 
-        fn STEP(&mut self) {
+        fn STEP(&mut self, k_inp : u8) {
+            if !(k_inp == 0) {
+                self.STATE.K_INPUT = k_inp;
+            }
             self.decode_instruction();
             self.INCREMENT_PC();
             if self.STATE.STATUS == 0 {
@@ -438,6 +449,9 @@ mod TMS1000 {
                     self.STATE.STATUS_LIFETIME -= 1;
                 }
             }
+            if !(self.STATE.K_INPUT == 0) {
+                self.STATE.K_INPUT = 0; //might be better for performance to assign to zero without checking
+            }
         }
 
         //Replicates INIT pin behavior
@@ -446,7 +460,15 @@ mod TMS1000 {
             self.STATE.PAGE_BUFFER = 15;
             self.STATE.PROGRAM_COUNTER = 0;
             self.STATE.PC_INDEX = 0;
-            self.STATE.R_OUTPUT = [0; 11];
+            self.STATE.CHAPTER_ADDRESS = 0;
+            self.STATE.CHAPTER_BUFFER = 0;
+            self.STATE.CHAPTER_SUBROUTINE_LATCH = 0;
+            self.STATE.CALL_LATCH = 0;
+            self.STATE.R_OUTPUT = (match self.VERSION {
+                        1200 | 1270 => vec![0; 13],
+                        1300 => vec![0; 16],
+                        _ => vec![0; 11],
+                        });
             self.STATE.O_OUTPUT = 0;
             self.STATE.CALL_LATCH = 0;
         }
@@ -455,7 +477,7 @@ mod TMS1000 {
         fn read_PLA(filename : &'static str) -> Result<HashMap<u32, u32>, &'static str> {
             let data: String =  match fs::read_to_string(filename) {
                 Ok(v) => v,
-                Err(_) => return Err("Problem Opening or Reading PLA file"),
+                Err(_) => return Err("Problem opening or reading PLA file"),
             };
             let re = Regex::new(r"([\-0-1]+) ([\-0-1]+)").unwrap(); //Unwrapping a static valid regex should be safe
             let mut pla_table = HashMap::new();
@@ -465,36 +487,38 @@ mod TMS1000 {
                 inputs.push(0b0);
                 let output = u32::from_str_radix(&line[2], 2).unwrap(); //Should be guarenteed by regex
 
-                for ch in line[1].chars() {
-                    if ch == '-' {
-                        let mut input0 = Vec::new();
-                        let mut input1 = Vec::new();
-                        for ref input in &inputs {
-                            input0.push(*input << 1);
-                            input1.push((*input << 1) + 1);
+                if !(output == 0) { //empty lines are skipped over
+                    for ch in line[1].chars() {
+                        if ch == '-' {
+                            let mut input0 = Vec::new();
+                            let mut input1 = Vec::new();
+                            for ref input in &inputs {
+                                input0.push(*input << 1);
+                                input1.push((*input << 1) + 1);
+                            }
+                            inputs = Vec::new();
+                            inputs.append(&mut input1);
+                            inputs.append(&mut input0);
                         }
-                        inputs = Vec::new();
-                        inputs.append(&mut input1);
-                        inputs.append(&mut input0);
-                    }
-                    else if ch == '1' {
-                        for input in &mut inputs {
-                            *input = (&*input << 1) + 1;
+                        else if ch == '1' {
+                            for input in &mut inputs {
+                                *input = (&*input << 1) + 1;
+                            }
+                        }
+                        else {
+                            for input in &mut inputs {
+                                *input = &*input << 1;
+                            }
                         }
                     }
-                    else {
-                        for input in &mut inputs {
-                            *input = &*input << 1;
-                        }
-                    }
-                }
 
-                for input in inputs {
-                    if !pla_table.contains_key(&input) {
-                        pla_table.insert(input, output);
-                    }
-                    else {
-                        return Err("Same input maps to multiple outputs");
+                    for input in inputs {
+                        if !pla_table.contains_key(&input) {
+                            pla_table.insert(input, output);
+                        }
+                        else {
+                            return Err("Same input maps to multiple outputs");
+                        }
                     }
                 }
             }
@@ -519,7 +543,7 @@ mod TMS1000 {
 
             let mut rFile = match fs::File::open(rom_file) {
                 Ok(v) => v,
-                Err(_) => return Err("Problem Opening ROM File".to_owned()),
+                Err(_) => return Err("ROM error: Problem opening ROM file".to_owned()),
             };
 
             let mut rom_array = vec![];
@@ -535,14 +559,21 @@ mod TMS1000 {
                     SUBROUTINE_RETURN : 0,
                     PAGE_ADDRESS: 15,
                     PAGE_BUFFER: 15,
+                    CHAPTER_ADDRESS: 0, //On non TMS1100/1300 systems these will never be changed
+                    CHAPTER_BUFFER: 0,
+                    CHAPTER_SUBROUTINE_LATCH: 0,
                     CALL_LATCH: 0,
-                    R_OUTPUT: [0; 11],
+                    R_OUTPUT: (match version {
+                        1200 | 1270 => vec![0; 13],
+                        1300 => vec![0; 16],
+                        _ => vec![0; 11],
+                        }),
                     O_OUTPUT: 0,
                     STATUS: 1,
                     STATUS_LIFETIME: 0,
                     ADDER_INC: 0,
                     K_INPUT: 0,
-                    RAM_ARRAY: [[255; 16]; 4], //this and all below are set to an invalid value, must be properly initialized by code
+                    RAM_ARRAY: vec![[[255; 16]; 4]; 2], //this and all below are set to an invalid value, must be properly initialized by code
                     X_REGISTER: 255,
                     Y_REGISTER: 255,
                     STATUS_LATCH: 255,
