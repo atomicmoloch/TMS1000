@@ -3,7 +3,7 @@
 //using all caps to denote actual system variables
 //and camelcase to denote handler elements
 
-
+//
 //imitates smaller than u8
 fn u1(value : u8) -> u8 {
     return value % 1;
@@ -55,6 +55,10 @@ mod TMS1000 {
         return value % 4;
     }
 
+   fn u3_usize(value : usize) -> usize {
+        return value % 8;
+    }
+
     fn u4(value : u8) -> u8 {
         return value % 16;
     }
@@ -73,6 +77,10 @@ mod TMS1000 {
 
     fn reversebits_u4(value : u8) -> u8 {
         return value.reverse_bits() >> 4;
+    }
+
+    fn reversebits_u3(value : u8) -> u8 { //only used for tms1100/1300 RAM addressing
+        return value.reverse_bits() >> 5;
     }
 
     fn reversebits_u2(value : u8) -> u8 {
@@ -105,7 +113,8 @@ mod TMS1000 {
 
         //RAM array
         //four files with 16 * U4 each
-        RAM_ARRAY: Vec<[[u8; 16]; 4]>,
+        //Only 4 files are used on non TMS1100/1300 devices
+        RAM_ARRAY: [[u8; 16]; 8],
 
         P_MUX_LOGIC: u8, //u4, P-MUX: Data multiplexxer. Selects input to adder from Y register, CKI logic, or RAM array (0, 1, or 2)
         N_MUX_LOGIC: u8,//u5, N-MUX: Data multiplexxer. Selects N input to adder (0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
@@ -163,14 +172,14 @@ mod TMS1000 {
             match self.STATE.N_MUX_LOGIC {
                 0 => return self.STATE.Y_REGISTER as u8,
                 1 => return self.CKI(),
-                _ => return self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+                _ => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
             }
         }
 
         fn N_MUX(&mut self) -> u8 {
         //(0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
             match self.STATE.P_MUX_LOGIC {
-                0 => return self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+                0 => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
                 1 => return self.CKI(),
                 2 => return self.STATE.ACCUMULATOR,
                 3 => return u4(1 + !(self.STATE.ACCUMULATOR)),
@@ -189,7 +198,12 @@ mod TMS1000 {
         }
 
         fn DECREMENT_PC(&mut self) {
-            self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX - 1);
+            if self.STATE.PC_INDEX == 0 {
+                self.STATE.PC_INDEX = 64;
+            }
+            else {
+                self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX - 1);
+            }
             self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
         }
 
@@ -250,10 +264,19 @@ mod TMS1000 {
             self.STATE.X_REGISTER = reversebits_u2(self.STATE.INSTRUCTION) as usize;
         }
 
+        fn LDX_TMS1100(&mut self) {
+            self.STATE.X_REGISTER = reversebits_u3(self.STATE.INSTRUCTION) as usize;
+        }
+
         //Complement X
         fn COMX (&mut self) {
             //Should flip bits of X register (1s compliment)
-            self.STATE.X_REGISTER = u2_usize(self.STATE.X_REGISTER - 3);
+            self.STATE.X_REGISTER = u2_usize(!self.STATE.X_REGISTER);
+        }
+
+        fn COMX_TMS1000 (&mut self) {
+            //Changes MSB of X register
+            self.STATE.X_REGISTER ^= 0b1 << 2;
         }
 
         //Transfer data from accumulator and status latch to O outputs
@@ -279,7 +302,7 @@ mod TMS1000 {
         //Reset R output addressed by Y
         fn RSTR (&mut self) {
             //sets R(Y) to 0; if Y out of range, no-op
-            if (self.STATE.Y_REGISTER <= 10) {
+            if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) {
                 self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 0;
             }
         }
@@ -288,9 +311,9 @@ mod TMS1000 {
         fn SBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 1
             let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
-            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
+            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
             if !(IS_SET) {
-                self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] + (1_u8 << BIT_U8));
+                self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] + (1_u8 << BIT_U8));
             }
         }
 
@@ -298,9 +321,9 @@ mod TMS1000 {
         fn RBIT (&mut self) {
             //sets BIT of RAM(X,Y) to 0
             let BIT_U8 = reversebits_u2(self.STATE.INSTRUCTION);
-            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
+            let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
             if (IS_SET) {
-                self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] - (1_u8 << BIT_U8));
+                self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] - (1_u8 << BIT_U8));
             }
         }
 
@@ -377,12 +400,12 @@ mod TMS1000 {
 
         //Accumulator data to memory
         fn STO(&mut self) {
-            self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
+            self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
         }
 
         //CKI to memory
         fn CKM(&mut self) {
-            self.STATE.RAM_ARRAY[self.STATE.CHAPTER_ADDRESS][self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.CKI();
+            self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.CKI();
         }
 
         //AU Select/Status latch instructions
@@ -411,7 +434,7 @@ mod TMS1000 {
 
         //The following function urgently needs debugging
         fn decode_instruction(&mut self) {
-            self.STATE.INSTRUCTION = self.ROM_ARRAY[(64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
+            self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
             let pla_output : u32 = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
                 Some(output) => *output ^ SYSTEM::TMS1000_mask,
                 None => 0 //Should not happen with a properly designed PLA, but mimics hardware functionality
@@ -573,7 +596,7 @@ mod TMS1000 {
                     STATUS_LIFETIME: 0,
                     ADDER_INC: 0,
                     K_INPUT: 0,
-                    RAM_ARRAY: vec![[[255; 16]; 4]; 2], //this and all below are set to an invalid value, must be properly initialized by code
+                    RAM_ARRAY: [[255; 16]; 8], //this and all below are set to an invalid value, must be properly initialized by code
                     X_REGISTER: 255,
                     Y_REGISTER: 255,
                     STATUS_LATCH: 255,
