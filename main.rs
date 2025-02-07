@@ -67,6 +67,10 @@ mod TMS1000 {
         return value % 32;
     }
 
+    fn u5_u32(value : u32) -> u32 {
+        return value % 32;
+    }
+
     fn u6(value : u8) -> u8 {
         return value % 64;
     }
@@ -93,6 +97,8 @@ mod TMS1000 {
 
     struct SYSTEM_STATE {
         INSTRUCTION: u8, //u8 current instruction
+        INSTRUCTION_DECODED: u32,
+        STEP: usize,
 
         X_REGISTER: usize, //U2 X, storage register; ram page address
         Y_REGISTER: usize, //U4 Y, storage register; ram word address and R output address
@@ -112,7 +118,7 @@ mod TMS1000 {
         CHAPTER_SUBROUTINE_LATCH: usize, //Stores return address after successfully executing call instruction
 
         //RAM array
-        //four files with 16 * U4 each
+        //eight files with 16 * U4 each
         //Only 4 files are used on non TMS1100/1300 devices
         RAM_ARRAY: [[u8; 16]; 8],
 
@@ -127,7 +133,7 @@ mod TMS1000 {
 
         //Outputs:
         R_OUTPUT: Vec<u8>, //R output register - single bit RAM cells, latches for output to R buffers. Used to control external devices, display scans, input encoding, status logic outputs. Can be strobed to scan a key matrix. Using u8 instead of bool here costs a little memory but maintains consistency with the rest of the conventions. May change later.
-        O_OUTPUT: u8, //U5, O output register. Used to transmit data
+        O_OUTPUT: u32, //U5, O output register. Used to transmit data
 
         K_INPUT: u8, //K input registers, K1, K2, K4, and K8
         //In order to maintain persistence across instruction cycles, like an analog button press would, I thought of giving it a lifespan variable (like Status)
@@ -197,15 +203,15 @@ mod TMS1000 {
             self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
         }
 
-        fn DECREMENT_PC(&mut self) {
-            if self.STATE.PC_INDEX == 0 {
-                self.STATE.PC_INDEX = 64;
-            }
-            else {
-                self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX - 1);
-            }
-            self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
-        }
+        // fn DECREMENT_PC(&mut self) {
+        //     if self.STATE.PC_INDEX == 0 {
+        //         self.STATE.PC_INDEX = 64;
+        //     }
+        //     else {
+        //         self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX - 1);
+        //     }
+        //     self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
+        // }
 
         fn SET_PC(&mut self, value : u8) {
             self.STATE.PROGRAM_COUNTER = value;
@@ -222,8 +228,12 @@ mod TMS1000 {
                 if (self.STATE.CALL_LATCH == 0) {
                     self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
                 }
+                self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
                 self.SET_PC(u6(self.STATE.INSTRUCTION));
-                self.DECREMENT_PC(); //Since Step() will increment it again
+      //          self.DECREMENT_PC(); //Since Step() will increment it again
+            }
+            else {
+                self.STATE.STATUS = 1;
             }
         }
 
@@ -231,27 +241,33 @@ mod TMS1000 {
         fn CALL (&mut self) {
             if (self.STATE.STATUS == 1) {
                 if (self.STATE.CALL_LATCH == 0) {
-                    self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX]; //removed the +1 for now, expecting Step to increment after RETN calls
+                    self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX]; //removed the +1 for now, expecting Step to increment
                     (self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER) = (self.STATE.PAGE_BUFFER, self.STATE.PAGE_ADDRESS);
+                    self.STATE.CHAPTER_SUBROUTINE_LATCH = self.STATE.CHAPTER_ADDRESS;
+                    self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
+                    self.STATE.CALL_LATCH = 1;
                 }
                 else {
+                    self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
                     self.STATE.PAGE_BUFFER = self.STATE.PAGE_ADDRESS;
                 }
                 self.SET_PC(u6(self.STATE.INSTRUCTION));
-                self.DECREMENT_PC();
+       //         self.DECREMENT_PC();
+            }
+            else {
+                self.STATE.STATUS = 1;
             }
         }
 
         //Return from subroutine
-        fn RETN(&mut self, _ : u8) {
+        fn RETN(&mut self) {
             self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
             if (self.STATE.CALL_LATCH == 1) {
                 self.SET_PC(self.STATE.SUBROUTINE_RETURN);
+                self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_SUBROUTINE_LATCH;
                 self.STATE.CALL_LATCH = 0;
             }
-            else {
-                self.INCREMENT_PC();
-            }
+            //Step will increment PC
         }
 
         //Load page buffer with constant
@@ -260,7 +276,7 @@ mod TMS1000 {
         }
 
         //Load X register with constant
-        fn LDX(&mut self) {
+        fn LDX_TMS1000(&mut self) {
             self.STATE.X_REGISTER = reversebits_u2(self.STATE.INSTRUCTION) as usize;
         }
 
@@ -282,7 +298,7 @@ mod TMS1000 {
         //Transfer data from accumulator and status latch to O outputs
         fn TDO (&mut self) {
             //Acc and SL transferred to O-output register
-            self.STATE.O_OUTPUT = u5(self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH << 4));
+            self.STATE.O_OUTPUT = u5_u32(self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH << 4));
         }
 
         //Clear O-output register
@@ -291,10 +307,15 @@ mod TMS1000 {
             self.STATE.O_OUTPUT = 0;
         }
 
+        fn COMC (&mut self) {
+            //Toggles chapter buffer
+            self.STATE.CHAPTER_BUFFER = (self.STATE.CHAPTER_BUFFER + 1) % 1;
+        }
+
         //Set R output addressed by Y
         fn SETR (&mut self) {
             //sets R(Y) to 1; if Y out of range, no-op
-            if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) {
+            if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) && (self.STATE.X_REGISTER < 4) {
                 self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 1;
             }
         }
@@ -302,7 +323,7 @@ mod TMS1000 {
         //Reset R output addressed by Y
         fn RSTR (&mut self) {
             //sets R(Y) to 0; if Y out of range, no-op
-            if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) {
+            if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) && (self.STATE.X_REGISTER < 4) {
                 self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 0;
             }
         }
@@ -362,7 +383,7 @@ mod TMS1000 {
         }
 
         //F16 to N-adder input
-        fn _15TN(&mut self) { //_ required to parse as function
+        fn TN15(&mut self) { //_ required to parse as function
             self.STATE.N_MUX_LOGIC = 4;
         }
 
@@ -428,42 +449,104 @@ mod TMS1000 {
     //Hardware meta-instructions
     //Instruction PLA and decoding
 
-        const TMS1000_instructions : [fn(&mut SYSTEM); 16] = [SYSTEM::STO, SYSTEM::CKM, SYSTEM::CKP, SYSTEM::YTP, SYSTEM::MTP, SYSTEM::ATN, SYSTEM::NATN, SYSTEM::MTN, SYSTEM::_15TN, SYSTEM::CKN, SYSTEM::NE, SYSTEM::C8, SYSTEM::CIN, SYSTEM::AUTA, SYSTEM::AUTY, SYSTEM::STSL];
+        const TMS1000_instructions : [fn(&mut SYSTEM); 16] = [SYSTEM::STO, SYSTEM::CKM, SYSTEM::CKP, SYSTEM::YTP, SYSTEM::MTP, SYSTEM::ATN, SYSTEM::NATN, SYSTEM::MTN, SYSTEM::TN15, SYSTEM::CKN, SYSTEM::NE, SYSTEM::C8, SYSTEM::CIN, SYSTEM::AUTA, SYSTEM::AUTY, SYSTEM::STSL];
         const TMS1000_mask : u32 = 0b0011111111001000;
 
 
-        //The following function urgently needs debugging
-        fn decode_instruction(&mut self) {
-            self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
-            let pla_output : u32 = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
-                Some(output) => *output ^ SYSTEM::TMS1000_mask,
-                None => 0 //Should not happen with a properly designed PLA, but mimics hardware functionality
-            });
-            for i in 2..12 {
-                if (pla_output & (1 << i) != 0) {
-                    SYSTEM::TMS1000_instructions[i](self);
-                }
+        fn get_o_outputs(&mut self) -> u32 {
+            let rval = match self.INSTRUCTION_PLA.get(&self.STATE.O_OUTPUT) {
+                Some(v) => v,
+                None => 0,
+            }
+            return rval;
+        }
 
-            }
-            for i in 0..1 { //Enforces microinstruction execution order (table 2-17.2)
-                if (pla_output & (1 << i) != 0) {
+        fn get_r_outputs(&mut self) -> Vec<u8>,k  {
+            return self.STATE.R_OUTPUT;
+        }
+
+        //Rom Address
+        //Read RAM
+        //ALU input
+        //K-input value
+        fn step_1(&mut self) {
+            for i in 2..12 {
+                if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
                     SYSTEM::TMS1000_instructions[i](self);
                 }
             }
-            for i in 13..15 {
-                if (pla_output & (1 << i) != 0) {
-                    SYSTEM::TMS1000_instructions[i](self);
-                }
+
+            match self.STATE.INSTRUCTION { //Based on timing table, RSTR appears to occur at the falling edge of this osc pulse
+                0x0C => SYSTEM::RSTR(self),
+                _ => ()
             }
+        }
+
+        //K-input valid
+        fn step_2(&mut self) {
 
         }
 
-        fn STEP(&mut self, k_inp : u8) {
-            if !(k_inp == 0) {
-                self.STATE.K_INPUT = k_inp;
+        //Write RAM
+        fn step_3(&mut self) {
+            match self.STATE.INSTRUCTION {
+                0x34..=0x37 => SYSTEM::RBIT(self),
+                0x30..=0x33 => SYSTEM::SBIT(self),
+                _ => ()
             }
-            self.decode_instruction();
+            for i in 0..1 {
+                if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
+                    SYSTEM::TMS1000_instructions[i](self);
+                }
+            }
+        }
+
+        //Register store
+        //Update PC
+        //RAM Address
+        //R-output register addressing takes place at the same time as RAM addressing (9-3.2)
+        fn step_4(&mut self) {
+            match self.STATE.INSTRUCTION {
+                0x0D => SYSTEM::SETR(self),
+                0x0A => SYSTEM::TDO(self),
+                0x0B => (match self.VERSION {
+                    1100 | 1300 => SYSTEM::COMC(self),
+                    _ => SYSTEM::CLO(self),
+                }) ,
+                0x10..=0x1F => SYSTEM::LDP(self),
+                0x28..=0x3F => (match self.VERSION {
+                    1100 | 1300 => SYSTEM::LDX_TMS1100(self),
+                    _ => SYSTEM::LDX_TMS1000(self),
+                }) ,
+                0x00 => (if not (let 1100 | 1300 = self.VERSION) {
+                    SYSTEM::COMX(self)
+                }),
+                0x09 => (if let 1100 | 1300 = self.VERSION {
+                    SYSTEM::COMX(self)
+                }),
+                _ => ()
+            }
+            for i in 13..15 {
+                if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
+                    SYSTEM::TMS1000_instructions[i](self);
+                }
+            }
             self.INCREMENT_PC();
+        }
+
+        fn step_5(&mut self) {
+
+        }
+
+        //Instruction decode
+        //Execute BR/CALL
+        fn step_6(&mut self) {
+            match self.STATE.INSTRUCTION {
+                0x80..=0xBF => SYSTEM::BR(self),
+                0xC0..=0xFF => SYSTEM::CALL(self),
+                0x0F => SYSTEM::RETN(self), //Assuming that RETN executes at the same time as BR and CALL, for symmetry
+                _ => ()
+            }
             if self.STATE.STATUS == 0 {
                 if self.STATE.STATUS_LIFETIME == 0 {
                     self.STATE.STATUS = 1;
@@ -472,9 +555,21 @@ mod TMS1000 {
                     self.STATE.STATUS_LIFETIME -= 1;
                 }
             }
-            if !(self.STATE.K_INPUT == 0) {
-                self.STATE.K_INPUT = 0; //might be better for performance to assign to zero without checking
-            }
+            self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
+            self.STATE.INSTRUCTION_DECODED = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
+                Some(output) => *output ^ SYSTEM::TMS1000_mask,
+                None => TMS1000_mask //Should be effectively a No-Op
+            });
+        }
+
+        const steps : [fn(&mut SYSTEM); 6] = [SYSTEM::step_1, SYSTEM::step_2, SYSTEM::step_3, SYSTEM::step_4, SYSTEM::step_5, SYSTEM::step_6, ];
+
+
+        fn STEP(&mut self, k_inp : u8) {
+            self.STATE.K_INPUT = k_inp;
+            SYSTEM::TMS1000_instructions[self.STATE.STEP](self);
+            self.STATE.STEP = (self.STATE.STEP + 1 ) % 6;
+
         }
 
         //Replicates INIT pin behavior
