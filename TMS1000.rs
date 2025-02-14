@@ -528,7 +528,7 @@ impl SYSTEM {
         self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
         self.STATE.INSTRUCTION_DECODED = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
             Some(output) => *output ^ SYSTEM::TMS1000_mask,
-            None => SYSTEM::TMS1000_mask //Should be effectively a No-Op
+            None => 0, //Should be effectively a No-Op
         });
     }
 
@@ -537,7 +537,7 @@ impl SYSTEM {
 
     pub fn STEP(&mut self, k_inp : u8) -> Self {
         self.STATE.K_INPUT = k_inp;
-        SYSTEM::TMS1000_instructions[self.STATE.STEP](self);
+        SYSTEM::steps[self.STATE.STEP](self);
         self.STATE.STEP = (self.STATE.STEP + 1 ) % 6;
         return self.clone();
 
@@ -654,7 +654,7 @@ impl SYSTEM {
             STATE: SYSTEM_STATE {
                 STEP : 0,
                 INSTRUCTION : 127, //should function as a no-op until incremented
-                INSTRUCTION_DECODED : 0b0011111111001000,
+                INSTRUCTION_DECODED : 0,
                 PROGRAM_COUNTER: 0,
                 PC_INDEX: 0,
                 SUBROUTINE_RETURN : 0,
