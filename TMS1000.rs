@@ -423,7 +423,7 @@ impl SYSTEM {
     const TMS1000_mask : u32 = 0b0011111111001000;
 
 
-    fn get_o_outputs(&mut self) -> u32 {
+    pub fn get_o_outputs(&mut self) -> u32 {
         let rval = match self.INSTRUCTION_PLA.get(&self.STATE.O_OUTPUT) {
             Some(v) => *v,
             None => 0,
@@ -431,7 +431,7 @@ impl SYSTEM {
         return rval;
     }
 
-    fn get_r_outputs(&mut self) -> Vec<u8>  {
+    pub fn get_r_outputs(&mut self) -> Vec<u8>  {
         return self.STATE.R_OUTPUT.clone();
     }
 
@@ -571,10 +571,10 @@ impl SYSTEM {
     }
 
     //Reads PLA into a HashMap
-    fn read_PLA(filename : String) -> Result<HashMap<u32, u32>, &'static str> {
+    fn read_PLA(filename : String) -> Result<HashMap<u32, u32>, String> {
         let data: String =  match fs::read_to_string(filename) {
             Ok(v) => v,
-            Err(_) => return Err("Problem opening or reading PLA file"),
+            Err(_) => return Err("Problem opening or reading PLA file".to_string()),
         };
         let re = Regex::new(r"([\-0-1]+) ([\-0-1]+)").unwrap(); //Unwrapping a static valid regex should be safe
         let mut pla_table = HashMap::new();
@@ -614,7 +614,9 @@ impl SYSTEM {
                         pla_table.insert(input, output);
                     }
                     else {
-                        return Err("Same input maps to multiple outputs");
+                        let combined_output : u32 = output & pla_table.get(&input).unwrap();
+                        pla_table.insert(input, output);
+                      //  return Err(format!("Input {:b} maps to multiple outputs {:b} and {:b}", input, output, pla_table.get(&input).unwrap()));
                     }
                 }
             }
@@ -627,14 +629,14 @@ impl SYSTEM {
         let iPLA = match Self::read_PLA(ipla_file) {
             Ok(v) => v,
             Err(v) => {
-                let e : String = "Instruction PLA error: ".to_owned() + v;
+                let e : String = "Instruction PLA error: ".to_owned() + &v;
                 return Err(e)},
         };
 
         let oPLA = match Self::read_PLA(opla_file) {
             Ok(v) => v,
             Err(v) => {
-                let e : String = "Output PLA error: ".to_owned() + v;
+                let e : String = "Output PLA error: ".to_owned() + &v;
                 return Err(e)},
         };
 
