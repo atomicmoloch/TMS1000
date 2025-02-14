@@ -32,6 +32,7 @@ fn u4(value : u8) -> u8 {
     return value % 16;
 }
 
+
 fn u5(value : u8) -> u8 {
     return value % 32;
 }
@@ -66,6 +67,8 @@ static PC_SEQ: [u8; 64] = [0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x3E, 0x3D,
 
 #[derive(Clone)]
 struct SYSTEM_STATE {
+    LOG: Vec<String>,
+
     INSTRUCTION: u8, //u8 current instruction
     INSTRUCTION_DECODED: u32,
     STEP: usize,
@@ -164,7 +167,7 @@ impl SYSTEM {
     }
 
     fn ADDER(&mut self) -> (u8, u8) {
-        let value = self.P_MUX() + self.N_MUX() + self.STATE.ADDER_INC;
+        let value = self.P_MUX().wrapping_add(self.N_MUX().wrapping_add(self.STATE.ADDER_INC));
         return (u1(value >> 4 & 1), u4(value));
     }
 
@@ -440,6 +443,8 @@ impl SYSTEM {
     //ALU input
     //K-input value
     fn step_1(&mut self) {
+        self.STATE.ADDER_INC = 0; //used by CIN; a little clumsy
+
         for i in 2..12 {
             if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
                 SYSTEM::TMS1000_instructions[i](self);
@@ -652,6 +657,7 @@ impl SYSTEM {
         let mut sys = SYSTEM {
             VERSION: version,
             STATE: SYSTEM_STATE {
+                LOG : Vec::new(),
                 STEP : 0,
                 INSTRUCTION : 127, //should function as a no-op until incremented
                 INSTRUCTION_DECODED : 0,
