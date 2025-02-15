@@ -61,7 +61,7 @@ fn reversebits_u2(value : u8) -> u8 {
     return value.reverse_bits() >> 6;
 }
 
-static PC_SEQ: [u8; 64] = [0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x3E, 0x3D, 0x3B, 0x37, 0x2F, 0x1E, 0x3C, 0x39, 0x33, 0x27, 0x0E, 0x1D, 0x3A, 0x35, 0x2B, 0x16, 0x2C, 0x18, 0x30, 0x21, 0x02, 0x05, 0x0B, 0x17, 0x2E, 0x1C, 0x38, 0x31, 0x23, 0x06, 0x0D, 0x1B, 0x36, 0x2D, 0x1A, 0x34, 0x29, 0x12, 0x24, 0x08, 0x11, 0x22, 0x04, 0x09, 0x13, 0x26, 0x0C, 0x19, 0x32, 0x25, 0x0A, 0x15, 0x2A, 0x14, 0x28, 0x10, 0x20];
+static PC_SEQ: [usize; 64] = [0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x3E, 0x3D, 0x3B, 0x37, 0x2F, 0x1E, 0x3C, 0x39, 0x33, 0x27, 0x0E, 0x1D, 0x3A, 0x35, 0x2B, 0x16, 0x2C, 0x18, 0x30, 0x21, 0x02, 0x05, 0x0B, 0x17, 0x2E, 0x1C, 0x38, 0x31, 0x23, 0x06, 0x0D, 0x1B, 0x36, 0x2D, 0x1A, 0x34, 0x29, 0x12, 0x24, 0x08, 0x11, 0x22, 0x04, 0x09, 0x13, 0x26, 0x0C, 0x19, 0x32, 0x25, 0x0A, 0x15, 0x2A, 0x14, 0x28, 0x10, 0x20];
 
 //Main body
 
@@ -76,9 +76,9 @@ struct SYSTEM_STATE {
     X_REGISTER: usize, //U2 X, storage register; ram page address
     Y_REGISTER: usize, //U4 Y, storage register; ram word address and R output address
 
-    PROGRAM_COUNTER: u8, //u6 PC, shift register
+    PROGRAM_COUNTER: usize, //u6 PC, shift register
     PC_INDEX: usize, //u6, index for pseudo-random program counter
-    SUBROUTINE_RETURN: u8, //u6 SR, storage register
+    SUBROUTINE_RETURN: usize, //u6 SR, storage register
 
     PAGE_ADDRESS: u8, //u4 PA, storage register; contains 4-bit page address of rom instructions
     PAGE_BUFFER: u8, //U4 PB storage register, used to set up page changes. also contains 4-bit return page address during call state
@@ -113,13 +113,6 @@ struct SYSTEM_STATE {
     //But decided that's more germane to the physical layer
 }
 
-impl SYSTEM_STATE {
-    fn ToString(&self) -> String {
-        "{self.STATE.X_REGISTER}\n{self.STATE.Y_REGISTER}\n{self.STATE.X_REGISTER}\n{self.STATE.PROGRAM_COUNTER}\n{self.STATE.PC_INDEX}\n{self.STATE.SUBROUTINE_RETURN}\n{self.STATE.PAGE_ADDRESS}\n{self.STATE.PAGE_BUFFER}\n{self.STATE.CALL_LATCH}\n{self.STATE.RAM_ARRAY}\n{self.STATE.CKI_VALUE}\n{self.STATE.P_MUX_LOGIC}\n{self.STATE.N_MUX_LOGIC}\n{self.STATE.ACCUMULATOR}\n{self.STATE.ADDER_INC}\n{self.STATE.STATUS}\n{self.STATE.STATUS_LATCH}\n{self.STATE.R_OUTPUT}\n{self.STATE.O_OUTPUT}\n{self.STATE.K_INPUT}".to_string()
-    }
-
-}
-
 #[derive(Clone)]
 pub struct SYSTEM {
     VERSION: u32,
@@ -137,43 +130,62 @@ impl SYSTEM {
     fn CKI(&mut self) -> u8 {
         //selects either constant field, k input to enter cki data bus, or bit mask
         match self.STATE.INSTRUCTION {
-            0x00..=0x07 => return reversebits_u4(self.STATE.INSTRUCTION), //constant
-            0x08..=0x0F => return self.STATE.K_INPUT,
-            0x20..=0x2F => return 0,
-            0x30..=0x3A => return 15 - reversebits_u2(self.STATE.INSTRUCTION), //bit mask
-            0x40..=0x7F => return reversebits_u4(self.STATE.INSTRUCTION),
-            _ => return 255, //does nothing on LDP, LDX, BR and CALL instructions
+            0x00..=0x07 => {self.STATE.LOG.push(format!("CKI: Returning constant operand {}", reversebits_u4(self.STATE.INSTRUCTION)));
+                            return reversebits_u4(self.STATE.INSTRUCTION);}, //constant
+            0x08..=0x0F => {self.STATE.LOG.push(format!("CKI: Returning K inputs {}", self.STATE.K_INPUT));
+                            return self.STATE.K_INPUT;},
+            0x20..=0x2F => {self.STATE.LOG.push("CKI: Returning 0".to_string());
+                            return 0;},
+            0x30..=0x3A => {self.STATE.LOG.push(format!("CKI: Returning bitmask {}", (15 - reversebits_u2(self.STATE.INSTRUCTION))));
+                            return 15 - reversebits_u2(self.STATE.INSTRUCTION);}, //bit mask
+            0x40..=0x7F => {self.STATE.LOG.push(format!("CKI: Returning constant operand {}", reversebits_u4(self.STATE.INSTRUCTION)));
+                            return reversebits_u4(self.STATE.INSTRUCTION);},
+            _ => {self.STATE.LOG.push("CKI: Invalid instruction".to_string());
+                  return 255;}, //does nothing on LDP, LDX, BR and CALL instructions
         }
     }
 
     fn P_MUX(&mut self) -> u8 {
     //(0) Y register, (1) CKI, (2) RAM page
         match self.STATE.N_MUX_LOGIC {
-            0 => return self.STATE.Y_REGISTER as u8,
-            1 => return self.CKI(),
-            _ => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
+            0 => {self.STATE.LOG.push(format!("P-MUX: Returning Y register value {}", self.STATE.Y_REGISTER));
+                  return self.STATE.Y_REGISTER as u8;},
+            1 => {self.STATE.LOG.push("P-MUX: Returning CKI value".to_string());
+                  return self.CKI();},
+            _ => {self.STATE.LOG.push(format!("P-MUX: Returning data in RAM at {}, {} : {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
+                  return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];},
         }
     }
 
     fn N_MUX(&mut self) -> u8 {
     //(0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
         match self.STATE.P_MUX_LOGIC {
-            0 => return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER],
-            1 => return self.CKI(),
-            2 => return self.STATE.ACCUMULATOR,
-            3 => return u4(1 + !(self.STATE.ACCUMULATOR)),
-            _ => return 15,
+            0 => {self.STATE.LOG.push(format!("N-MUX: Returning data in RAM at {}, {} : {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
+                  return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];}
+            1 => {self.STATE.LOG.push("N-MUX: Returning CKI value".to_string());
+                  return self.CKI();},
+            2 => {self.STATE.LOG.push(format!("N-MUX: returning accumulator value {}", self.STATE.ACCUMULATOR));
+                  return self.STATE.ACCUMULATOR;},
+            3 => {self.STATE.LOG.push(format!("N-MUX: returning inverse of accumulator value {}", u4(1 + !(self.STATE.ACCUMULATOR))));
+                  return u4(1 + !(self.STATE.ACCUMULATOR));},
+            _ => {self.STATE.LOG.push("N-MUX: returning 15".to_string());
+                  return 15;},
         }
     }
 
     fn ADDER(&mut self) -> (u8, u8) {
-        let value = self.P_MUX().wrapping_add(self.N_MUX().wrapping_add(self.STATE.ADDER_INC));
-        return (u1(value >> 4 & 1), u4(value));
+        let p_mux : u8 = self.P_MUX();
+        let n_mux : u8 = self.N_MUX();
+        let value : u8 = u5(p_mux.wrapping_add(n_mux.wrapping_add(self.STATE.ADDER_INC)));
+        let return_value = (u1(value >> 4 & 1), u4(value));
+        self.STATE.LOG.push(format!("Adder: Returning {} + {} + {} = ({}, {})", p_mux, n_mux, self.STATE.ADDER_INC, return_value.0, return_value.1));
+        return return_value;
     }
 
     fn INCREMENT_PC(&mut self) {
         self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX + 1);
         self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
+        self.STATE.LOG.push(format!("Program Counter: incremented to {} ({})", self.STATE.PROGRAM_COUNTER, self.STATE.PC_INDEX));
     }
 
     // fn DECREMENT_PC(&mut self) {
@@ -186,9 +198,10 @@ impl SYSTEM {
     //     self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
     // }
 
-    fn SET_PC(&mut self, value : u8) {
+    fn SET_PC(&mut self, value : usize) {
         self.STATE.PROGRAM_COUNTER = value;
         self.STATE.PC_INDEX = PC_SEQ.iter().position(|&i| i == value).unwrap(); //this should be guarenteed; thus the use of unwrap()
+        self.STATE.LOG.push(format!("Program Counter: set to {} ({})", self.STATE.PROGRAM_COUNTER, self.STATE.PC_INDEX));
     }
 
 //Microinstructions
@@ -198,47 +211,84 @@ impl SYSTEM {
         //On status: changes PC to br value and if call latch not active, moved PB to PA
         //If not status: increments PC and changes status to 1
         if (self.STATE.STATUS == 1) {
+            self.STATE.LOG.push("BR: Status = 1".to_string());
             if (self.STATE.CALL_LATCH == 0) {
                 self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
+                self.STATE.LOG.push(format!("BR: PA set to PB value {}", self.STATE.PAGE_BUFFER));
+            }
+            else {
+                self.STATE.LOG.push("BR: CL = 1".to_string());
             }
             self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
-            self.SET_PC(u6(self.STATE.INSTRUCTION));
+            self.STATE.LOG.push(format!("BR: CA set to CB value {}", self.STATE.CHAPTER_BUFFER));
+
+            self.SET_PC(u6(self.STATE.INSTRUCTION) as usize);
     //          self.DECREMENT_PC(); //Since Step() will increment it again
         }
         else {
             self.STATE.STATUS = 1;
+            self.STATE.LOG.push(("BR: Status = 0. Status set to 1").to_string());
         }
     }
 
     //Call subroutine on status = one
     fn CALL (&mut self) {
         if (self.STATE.STATUS == 1) {
+            self.STATE.LOG.push("CALL: Status = 1".to_string());
             if (self.STATE.CALL_LATCH == 0) {
-                self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX]; //removed the +1 for now, expecting Step to increment
+                self.STATE.LOG.push("CALL: CL = 0".to_string());
+
+                self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX];
+                self.STATE.LOG.push(format!("CALL: SR set to {}", self.STATE.SUBROUTINE_RETURN));
+
                 (self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER) = (self.STATE.PAGE_BUFFER, self.STATE.PAGE_ADDRESS);
+                self.STATE.LOG.push(format!("CALL: PA (now: {}) and PB (now: {}) swapped", self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER));
+
                 self.STATE.CHAPTER_SUBROUTINE_LATCH = self.STATE.CHAPTER_ADDRESS;
+                self.STATE.LOG.push(format!("CALL: CSL set to CA value {}", self.STATE.CHAPTER_SUBROUTINE_LATCH));
+
                 self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
+                self.STATE.LOG.push(format!("CALL: CA set to CB value {}", self.STATE.CHAPTER_ADDRESS));
+
                 self.STATE.CALL_LATCH = 1;
+                self.STATE.LOG.push("CALL: CL set to 1".to_string());
             }
             else {
+                self.STATE.LOG.push("CALL: CL = 1".to_string());
+
                 self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
+                self.STATE.LOG.push(format!("CALL: CA set to CB value {}", self.STATE.CHAPTER_BUFFER));
+
                 self.STATE.PAGE_BUFFER = self.STATE.PAGE_ADDRESS;
+                self.STATE.LOG.push(format!("CALL: PA set to PB value {}", self.STATE.PAGE_BUFFER));
             }
-            self.SET_PC(u6(self.STATE.INSTRUCTION));
+            self.SET_PC(u6(self.STATE.INSTRUCTION) as usize);
     //         self.DECREMENT_PC();
         }
         else {
             self.STATE.STATUS = 1;
+            self.STATE.LOG.push(("CALL: Status = 0. Status set to 1").to_string());
         }
     }
 
     //Return from subroutine
     fn RETN(&mut self) {
         self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
+        self.STATE.LOG.push(format!("RETN: PA set to PB value {}", self.STATE.PAGE_BUFFER));
+
         if (self.STATE.CALL_LATCH == 1) {
+            self.STATE.LOG.push("RETN: CL = 1".to_string());
+
             self.SET_PC(self.STATE.SUBROUTINE_RETURN);
+
             self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_SUBROUTINE_LATCH;
+            self.STATE.LOG.push(format!("RETN: CA set to CSL value {}", self.STATE.CHAPTER_ADDRESS));
+
             self.STATE.CALL_LATCH = 0;
+            self.STATE.LOG.push("RETN: CL set to 0".to_string());
+        }
+        else {
+            self.STATE.LOG.push("RETN: CL = 0".to_string());
         }
         //Step will increment PC
     }
@@ -246,43 +296,51 @@ impl SYSTEM {
     //Load page buffer with constant
     fn LDP (&mut self) {
         self.STATE.PAGE_BUFFER = reversebits_u4(self.STATE.INSTRUCTION); //MSB on right
+        self.STATE.LOG.push(format!("LDP: PB set to {}", self.STATE.PAGE_BUFFER));
     }
 
     //Load X register with constant
     fn LDX_TMS1000(&mut self) {
         self.STATE.X_REGISTER = reversebits_u2(self.STATE.INSTRUCTION) as usize;
+        self.STATE.LOG.push(format!("LDX: X register set to {}", self.STATE.X_REGISTER));
     }
 
     fn LDX_TMS1100(&mut self) {
         self.STATE.X_REGISTER = reversebits_u3(self.STATE.INSTRUCTION) as usize;
+        self.STATE.LOG.push(format!("LDX: X register set to {}", self.STATE.X_REGISTER));
     }
 
     //Complement X
     fn COMX (&mut self) {
         //Should flip bits of X register (1s compliment)
         self.STATE.X_REGISTER = u2_usize(!self.STATE.X_REGISTER);
+        self.STATE.LOG.push(format!("COMX: X register set to {}", self.STATE.X_REGISTER));
     }
 
     fn COMX_TMS1000 (&mut self) {
         //Changes MSB of X register
         self.STATE.X_REGISTER ^= 0b1 << 2;
+        self.STATE.LOG.push(format!("COMX: X register set to {}", self.STATE.X_REGISTER));
     }
 
     //Transfer data from accumulator and status latch to O outputs
     fn TDO (&mut self) {
         //Acc and SL transferred to O-output register
         self.STATE.O_OUTPUT = u5_u32((self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH << 4)).into());
+        self.STATE.LOG.push(format!("TDO: O output set to {}", self.STATE.O_OUTPUT));
     }
 
     //Clear O-output register
     fn CLO (&mut self) {
         //zeroes O-register
         self.STATE.O_OUTPUT = 0;
+        self.STATE.LOG.push("CLO: O output cleared".to_string());
     }
 
     fn COMC (&mut self) {
         //Toggles chapter buffer
         self.STATE.CHAPTER_BUFFER = (self.STATE.CHAPTER_BUFFER + 1) % 1;
+        self.STATE.LOG.push(format!("COMC: CB set to {}", self.STATE.CHAPTER_BUFFER));
     }
 
     //Set R output addressed by Y
@@ -290,6 +348,10 @@ impl SYSTEM {
         //sets R(Y) to 1; if Y out of range, no-op
         if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) && (self.STATE.X_REGISTER < 4) {
             self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 1;
+            self.STATE.LOG.push(format!("SETR: R output {} set to 1", self.STATE.Y_REGISTER));
+        }
+        else {
+            self.STATE.LOG.push("SETR: Y register out of range".to_string());
         }
     }
 
@@ -298,6 +360,10 @@ impl SYSTEM {
         //sets R(Y) to 0; if Y out of range, no-op
         if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) && (self.STATE.X_REGISTER < 4) {
             self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 0;
+            self.STATE.LOG.push(format!("RSETR: R output {} set to 0", self.STATE.Y_REGISTER));
+        }
+        else {
+            self.STATE.LOG.push("RSETR: Y register out of range".to_string());
         }
     }
 
@@ -308,6 +374,10 @@ impl SYSTEM {
         let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
         if !(IS_SET) {
             self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] + (1_u8 << BIT_U8));
+            self.STATE.LOG.push(format!("SBIT: Set bit {} at RAM address {}, {} to 1", BIT_U8, self.STATE.X_REGISTER, self.STATE.Y_REGISTER));
+        }
+        else {
+            self.STATE.LOG.push(format!("SBIT: Bit {} at RAM address {}, {} was already set to 1", BIT_U8, self.STATE.X_REGISTER, self.STATE.Y_REGISTER));
         }
     }
 
@@ -318,6 +388,10 @@ impl SYSTEM {
         let IS_SET = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] & (1_u8 << BIT_U8) != 0;
         if (IS_SET) {
             self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = u4(self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] - (1_u8 << BIT_U8));
+            self.STATE.LOG.push(format!("RBIT: Set bit {} at RAM address {}, {} to 0", BIT_U8, self.STATE.X_REGISTER, self.STATE.Y_REGISTER));
+        }
+        else {
+            self.STATE.LOG.push(format!("SBIT: Bit {} at RAM address {}, {} was already set to 0", BIT_U8, self.STATE.X_REGISTER, self.STATE.Y_REGISTER));
         }
     }
 
@@ -326,16 +400,19 @@ impl SYSTEM {
     //CKI to P-adder input
     fn CKP(&mut self) {
         self.STATE.P_MUX_LOGIC = 1;
+        self.STATE.LOG.push("CKP: P-MUX set to output CKI".to_string());
     }
 
     //Y-register to P-adder input
     fn YTP(&mut self) {
         self.STATE.P_MUX_LOGIC = 0;
+        self.STATE.LOG.push("CKP: P-MUX set to output Y register".to_string());
     }
 
-    //Memory (X, Y) to N-adder input
+    //Memory (X, Y) to P-adder input
     fn MTP(&mut self) {
         self.STATE.P_MUX_LOGIC = 2;
+        self.STATE.LOG.push("MTP: P-MUX set to output RAM".to_string());
     }
 
     //N-MUX instructions
@@ -343,26 +420,31 @@ impl SYSTEM {
     //Accumulator to N-adder input
     fn ATN(&mut self) {
         self.STATE.N_MUX_LOGIC = 2;
+        self.STATE.LOG.push("ATN: N-MUX set to output accumulator".to_string());
     }
 
     //not-accumulator to N-adder input
     fn NATN(&mut self) {
         self.STATE.N_MUX_LOGIC = 3;
+        self.STATE.LOG.push("ATN: N-MUX set to output inverted accumulator".to_string());
     }
 
     //Memory (X, Y) to N-adder input
     fn MTN(&mut self) {
         self.STATE.N_MUX_LOGIC = 0;
+        self.STATE.LOG.push("ATN: N-MUX set to output RAM".to_string());
     }
 
     //F16 to N-adder input
-    fn TN15(&mut self) { //_ required to parse as function
+    fn TN15(&mut self) {
         self.STATE.N_MUX_LOGIC = 4;
+        self.STATE.LOG.push("ATN: N-MUX set to output 15".to_string());
     }
 
     //CKI to N-adder input
     fn CKN(&mut self) {
         self.STATE.N_MUX_LOGIC = 1;
+        self.STATE.LOG.push("ATN: N-MUX set to output CKI".to_string());
     }
 
 
@@ -371,14 +453,17 @@ impl SYSTEM {
     //One is added to the sum of P plus N inputs (P + N + 1)
     fn CIN(&mut self) {
         self.STATE.ADDER_INC = 1;
+        self.STATE.LOG.push("CIN: 1 added to P and N adder inputs".to_string());
     }
 
     //Adder compares P and N inputs. If they are identical, status is set to zero
     fn NE(&mut self) {
         if (self.N_MUX() == self.P_MUX()) {
             self.STATE.STATUS = 0;
+            self.STATE.LOG.push("NE: P and N adder inputs identical. Status set to 0".to_string());
         }
         else {
+            self.STATE.LOG.push("NE: P and N adder inputs different. Status set to 1".to_string());
             self.STATE.STATUS = 1;
         }
         self.STATE.STATUS_LIFETIME = 1 - self.STATE.STATUS;
@@ -387,6 +472,7 @@ impl SYSTEM {
     //Carry is sent to status (MSB only)
     fn C8(&mut self) {
         self.STATE.STATUS = self.ADDER().0;
+        self.STATE.LOG.push(format!("C8: Status set to adder carry value {}", self.STATE.STATUS));
         self.STATE.STATUS_LIFETIME = 1 - self.STATE.STATUS;
     }
 
@@ -395,11 +481,13 @@ impl SYSTEM {
     //Accumulator data to memory
     fn STO(&mut self) {
         self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
+        self.STATE.LOG.push(format!("STO: RAM location {}, {} set to accumulator value {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
     }
 
     //CKI to memory
     fn CKM(&mut self) {
         self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.CKI();
+        self.STATE.LOG.push(format!("CKM: RAM location {}, {} set to CKI value {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
     }
 
     //AU Select/Status latch instructions
@@ -407,16 +495,19 @@ impl SYSTEM {
     //Adder result stored into accumulator
     fn AUTA(&mut self) {
         self.STATE.ACCUMULATOR = self.ADDER().1;
+        self.STATE.LOG.push(format!("AUTA: Accumulator set to adder result {}", self.STATE.ACCUMULATOR));
     }
 
     //Adder result stored into Y-register
     fn AUTY(&mut self) {
         self.STATE.Y_REGISTER = self.ADDER().1 as usize;
+        self.STATE.LOG.push(format!("AUTY: Y register set to adder result {}", self.STATE.Y_REGISTER));
     }
 
     //Status is stored into status latch
     fn STSL(&mut self) {
         self.STATE.STATUS_LATCH = self.STATE.STATUS;
+        self.STATE.LOG.push(format!("STSL: Status latch set to status value {}", self.STATE.STATUS_LATCH));
     }
 
 //Hardware meta-instructions
@@ -424,19 +515,6 @@ impl SYSTEM {
 
     const TMS1000_instructions : [fn(&mut SYSTEM); 16] = [SYSTEM::STO, SYSTEM::CKM, SYSTEM::CKP, SYSTEM::YTP, SYSTEM::MTP, SYSTEM::ATN, SYSTEM::NATN, SYSTEM::MTN, SYSTEM::TN15, SYSTEM::CKN, SYSTEM::NE, SYSTEM::C8, SYSTEM::CIN, SYSTEM::AUTA, SYSTEM::AUTY, SYSTEM::STSL];
     const TMS1000_mask : u32 = 0b0011111111001000;
-
-
-    pub fn get_o_outputs(&mut self) -> u32 {
-        let rval = match self.INSTRUCTION_PLA.get(&self.STATE.O_OUTPUT) {
-            Some(v) => *v,
-            None => 0,
-        };
-        return rval;
-    }
-
-    pub fn get_r_outputs(&mut self) -> Vec<u8>  {
-        return self.STATE.R_OUTPUT.clone();
-    }
 
     //Rom Address
     //Read RAM
@@ -525,12 +603,16 @@ impl SYSTEM {
         if self.STATE.STATUS == 0 {
             if self.STATE.STATUS_LIFETIME == 0 {
                 self.STATE.STATUS = 1;
+                self.STATE.LOG.push("Status set to 1".to_string());
             }
             else {
                 self.STATE.STATUS_LIFETIME -= 1;
             }
         }
-        self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PC_INDEX];
+
+        self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PROGRAM_COUNTER];
+        self.STATE.LOG.push(format!("Instruction {} loaded from ROM address {} {} {}", self.STATE.INSTRUCTION, self.STATE.CHAPTER_ADDRESS, self.STATE.PAGE_ADDRESS, self.STATE.PROGRAM_COUNTER));
+
         self.STATE.INSTRUCTION_DECODED = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
             Some(output) => *output ^ SYSTEM::TMS1000_mask,
             None => 0, //Should be effectively a No-Op
@@ -542,6 +624,7 @@ impl SYSTEM {
 
     pub fn STEP(&mut self, k_inp : u8) -> Self {
         self.STATE.K_INPUT = k_inp;
+        self.STATE.LOG.push(format!("Executing step {}", self.STATE.STEP));
         SYSTEM::steps[self.STATE.STEP](self);
         self.STATE.STEP = (self.STATE.STEP + 1 ) % 6;
         return self.clone();
@@ -558,6 +641,7 @@ impl SYSTEM {
 
     //Replicates INIT pin behavior
     pub fn initialize(&mut self) {
+        self.STATE.LOG.push("Hardware reinitialized".to_string());
         self.STATE.PAGE_ADDRESS = 15;
         self.STATE.PAGE_BUFFER = 15;
         self.STATE.PROGRAM_COUNTER = 0;
@@ -575,7 +659,26 @@ impl SYSTEM {
         self.STATE.CALL_LATCH = 0;
     }
 
+    pub fn get_o_outputs(&mut self) -> u32 {
+        let rval = match self.INSTRUCTION_PLA.get(&self.STATE.O_OUTPUT) {
+            Some(v) => *v,
+            None => 0,
+        };
+        return rval;
+    }
+
+    pub fn get_r_outputs(&mut self) -> Vec<u8>  {
+        return self.STATE.R_OUTPUT.clone();
+    }
+
+    pub fn get_log(&mut self) -> Vec<String> {
+        let retval = self.STATE.LOG.clone();
+        self.STATE.LOG = Vec::new();
+        return retval;
+    }
+
     //Reads PLA into a HashMap
+    //Used in initialization (below)
     fn read_PLA(filename : String) -> Result<HashMap<u32, u32>, String> {
         let data: String =  match fs::read_to_string(filename) {
             Ok(v) => v,

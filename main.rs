@@ -3,7 +3,6 @@ pub mod TMS1000;
 
 fn input() -> String
 {
-    print!("> ");
     let mut inp = String::new();
     std::io::stdin().read_line(&mut inp).expect("Could not read from stdin");
     return inp;
@@ -32,19 +31,25 @@ fn main() {
             },
     };
 
-    let mut command : String = "".to_string();
+    let mut command : String = "step".to_string();
     let mut k_inputs : u8 = 0;
 
     while !(command == "quit") {
-        println!("K inputs: {}", k_inputs);
+        println!("{}", format!("K inputs: {:b}", k_inputs));
         println!("R outputs: {:?}", system.get_r_outputs());
-        println!("O outputs: {}", system.get_o_outputs());
+        println!("{}", format!("O outputs: {:b}", system.get_o_outputs()));
         command = input();
         match command.as_str() {
-            "step" => system = system.STEP(k_inputs),
-            "cycle" => system = system.instruction_cycle(k_inputs),
-            "setk" => k_inputs = get_k_inputs(),
+            "step\n" => {system = system.STEP(k_inputs);
+                       println!("One step executed");},
+            "cycle\n" => {system = system.instruction_cycle(k_inputs);
+                        println!("One instruction cycle executed");},
+            "setk\n" => k_inputs = get_k_inputs(),
             _ => (),
+        }
+        let log = system.get_log();
+        for entry in log.iter() {
+            println!("{}", entry);
         }
     }
 }
