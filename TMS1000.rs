@@ -327,7 +327,7 @@ impl SYSTEM {
     fn TDO (&mut self) {
         //Acc and SL transferred to O-output register
         self.STATE.O_OUTPUT = u5_u32((self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH << 4)).into());
-        self.STATE.LOG.push(format!("TDO: O output set to {}", self.STATE.O_OUTPUT));
+        self.STATE.LOG.push(format!("TDO: O output set to {:b}", self.STATE.O_OUTPUT));
     }
 
     //Clear O-output register
@@ -406,7 +406,7 @@ impl SYSTEM {
     //Y-register to P-adder input
     fn YTP(&mut self) {
         self.STATE.P_MUX_LOGIC = 0;
-        self.STATE.LOG.push("CKP: P-MUX set to output Y register".to_string());
+        self.STATE.LOG.push("YTP: P-MUX set to output Y register".to_string());
     }
 
     //Memory (X, Y) to P-adder input
@@ -611,12 +611,13 @@ impl SYSTEM {
         }
 
         self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PROGRAM_COUNTER];
-        self.STATE.LOG.push(format!("Instruction {} loaded from ROM address {} {} {}", self.STATE.INSTRUCTION, self.STATE.CHAPTER_ADDRESS, self.STATE.PAGE_ADDRESS, self.STATE.PROGRAM_COUNTER));
+        self.STATE.LOG.push(format!("Instruction {:b} loaded from ROM address {} {} {}", self.STATE.INSTRUCTION, self.STATE.CHAPTER_ADDRESS, self.STATE.PAGE_ADDRESS, self.STATE.PROGRAM_COUNTER));
 
         self.STATE.INSTRUCTION_DECODED = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
-            Some(output) => *output ^ SYSTEM::TMS1000_mask,
+            Some(output) => output ^ SYSTEM::TMS1000_mask, //why was this dereferenced? removed
             None => 0, //Should be effectively a No-Op
         });
+        self.STATE.LOG.push(format!("Instruction {:b} decoded to {:b} (raw: {:b})", self.STATE.INSTRUCTION, self.STATE.INSTRUCTION_DECODED, self.STATE.INSTRUCTION_DECODED ^ SYSTEM::TMS1000_mask));
     }
 
     const steps : [fn(&mut SYSTEM); 6] = [SYSTEM::step_1, SYSTEM::step_2, SYSTEM::step_3, SYSTEM::step_4, SYSTEM::step_5, SYSTEM::step_6, ];
@@ -720,10 +721,12 @@ impl SYSTEM {
                 for input in inputs {
                     if !pla_table.contains_key(&input) {
                         pla_table.insert(input, output);
+                        println!("Input: {:b} Output: {:b}", input, output);
                     }
                     else {
                         let combined_output : u32 = output & pla_table.get(&input).unwrap();
-                        pla_table.insert(input, output);
+                        pla_table.insert(input, combined_output);
+                        println!("Input: {:b} New Output: {:b}", input, combined_output);
                       //  return Err(format!("Input {:b} maps to multiple outputs {:b} and {:b}", input, output, pla_table.get(&input).unwrap()));
                     }
                 }
@@ -764,8 +767,8 @@ impl SYSTEM {
                 STEP : 0,
                 INSTRUCTION : 127, //should function as a no-op until incremented
                 INSTRUCTION_DECODED : 0,
-                PROGRAM_COUNTER: 0,
-                PC_INDEX: 0,
+                PROGRAM_COUNTER: 0x20,
+                PC_INDEX: 63, //Starts at last instruction so on first cycle increment will go to first instruction; as far as I can tell this is how the actual hardware did it too
                 SUBROUTINE_RETURN : 0,
                 PAGE_ADDRESS: 15,
                 PAGE_BUFFER: 15,

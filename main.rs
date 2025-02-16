@@ -34,7 +34,7 @@ fn main() {
     let mut command : String = "step".to_string();
     let mut k_inputs : u8 = 0;
 
-    while !(command == "quit") {
+    while !(command == "quit\n") {
         println!("{}", format!("K inputs: {:b}", k_inputs));
         println!("R outputs: {:?}", system.get_r_outputs());
         println!("{}", format!("O outputs: {:b}", system.get_o_outputs()));
