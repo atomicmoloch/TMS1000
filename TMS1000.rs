@@ -95,11 +95,11 @@ struct SYSTEM_STATE {
     //Only 4 files are used on non TMS1100/1300 devices
     RAM_ARRAY: [[u8; 16]; 8],
 
-    P_MUX_LOGIC: u8, //u4, P-MUX: Data multiplexxer. Selects input to adder from Y register, CKI logic, or RAM array (0, 1, or 2)
-    N_MUX_LOGIC: u8,//u5, N-MUX: Data multiplexxer. Selects N input to adder (0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
-
     ACCUMULATOR: u8, //U4 A, storage register
     ADDER_INC: u8, //u1 - whether to increment the adder - set by C8 microinstruction and should be reset to 0 every cycle
+    P_MUX: u8,
+    N_MUX: u8,
+
     STATUS: u8, //1-bit S, gates. conditional branch control. Normal state - 1. Branches are taken if S = 1. Selectively outputs a zero when carry is false or when logical compare is true. A zero lasts for one instruction cycle only.
     STATUS_LIFETIME : u8, //Facilitates Status, as described above
     STATUS_LATCH: u8, //1-bit SL, latch, selectively stores status output. Transfers to O register w/ acc bits when TDO is executed
@@ -145,40 +145,10 @@ impl SYSTEM {
         }
     }
 
-    fn P_MUX(&mut self) -> u8 {
-    //(0) Y register, (1) CKI, (2) RAM page
-        match self.STATE.P_MUX_LOGIC {
-            0 => {self.STATE.LOG.push(format!("P-MUX: Returning Y register value {}", self.STATE.Y_REGISTER));
-                  return self.STATE.Y_REGISTER as u8;},
-            1 => {self.STATE.LOG.push("P-MUX: Returning CKI value".to_string());
-                  return self.CKI();},
-            _ => {self.STATE.LOG.push(format!("P-MUX: Returning data in RAM at {}, {} : {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
-                  return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];},
-        }
-    }
-
-    fn N_MUX(&mut self) -> u8 {
-    //(0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
-        match self.STATE.N_MUX_LOGIC {
-            0 => {self.STATE.LOG.push(format!("N-MUX: Returning data in RAM at {}, {} : {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
-                  return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];}
-            1 => {self.STATE.LOG.push("N-MUX: Returning CKI value".to_string());
-                  return self.CKI();},
-            2 => {self.STATE.LOG.push(format!("N-MUX: returning accumulator value {}", self.STATE.ACCUMULATOR));
-                  return self.STATE.ACCUMULATOR;},
-            3 => {self.STATE.LOG.push(format!("N-MUX: returning inverse of accumulator value {}", u4(1 + !(self.STATE.ACCUMULATOR))));
-                  return u4(1 + !(self.STATE.ACCUMULATOR));},
-            _ => {self.STATE.LOG.push("N-MUX: returning 15".to_string());
-                  return 15;},
-        }
-    }
-
     fn ADDER(&mut self) -> (u8, u8) {
-        let p_mux : u8 = self.P_MUX();
-        let n_mux : u8 = self.N_MUX();
-        let value : u8 = u5(p_mux.wrapping_add(n_mux.wrapping_add(self.STATE.ADDER_INC)));
+        let value : u8 = u5(self.STATE.P_MUX.wrapping_add(self.STATE.N_MUX.wrapping_add(self.STATE.ADDER_INC)));
         let return_value = (u1(value >> 4 & 1), u4(value));
-        self.STATE.LOG.push(format!("Adder: Returning {} + {} + {} = ({}, {})", p_mux, n_mux, self.STATE.ADDER_INC, return_value.0, return_value.1));
+        self.STATE.LOG.push(format!("Adder: Returning {} + {} + {} = ({}, {})", self.STATE.P_MUX, self.STATE.N_MUX, self.STATE.ADDER_INC, return_value.0, return_value.1));
         return return_value;
     }
 
@@ -399,52 +369,52 @@ impl SYSTEM {
 
     //CKI to P-adder input
     fn CKP(&mut self) {
-        self.STATE.P_MUX_LOGIC = 1;
         self.STATE.LOG.push("CKP: P-MUX set to output CKI".to_string());
+        self.STATE.P_MUX = self.CKI();
     }
 
     //Y-register to P-adder input
     fn YTP(&mut self) {
-        self.STATE.P_MUX_LOGIC = 0;
-        self.STATE.LOG.push("YTP: P-MUX set to output Y register".to_string());
+        self.STATE.LOG.push(format!("YTP: P-MUX set to output Y register value {}", self.STATE.Y_REGISTER));
+        self.STATE.P_MUX = self.STATE.Y_REGISTER as u8;
     }
 
     //Memory (X, Y) to P-adder input
     fn MTP(&mut self) {
-        self.STATE.P_MUX_LOGIC = 2;
-        self.STATE.LOG.push("MTP: P-MUX set to output RAM".to_string());
+        self.STATE.P_MUX = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];
+        self.STATE.LOG.push(format!("MTP: P-MUX set to output RAM value {}", self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
     }
 
     //N-MUX instructions
 
     //Accumulator to N-adder input
     fn ATN(&mut self) {
-        self.STATE.N_MUX_LOGIC = 2;
-        self.STATE.LOG.push("ATN: N-MUX set to output accumulator".to_string());
+        self.STATE.LOG.push(format!("ATN: N-MUX set to accumulator value {}", self.STATE.ACCUMULATOR));
+        self.STATE.N_MUX = self.STATE.ACCUMULATOR;
     }
 
     //not-accumulator to N-adder input
     fn NATN(&mut self) {
-        self.STATE.N_MUX_LOGIC = 3;
-        self.STATE.LOG.push("ATN: N-MUX set to output inverted accumulator".to_string());
+        self.STATE.LOG.push("NATN: N-MUX set to output inverted accumulator".to_string());
+        self.STATE.N_MUX = u4(1 + !(self.STATE.ACCUMULATOR));
     }
 
     //Memory (X, Y) to N-adder input
     fn MTN(&mut self) {
-        self.STATE.N_MUX_LOGIC = 0;
-        self.STATE.LOG.push("ATN: N-MUX set to output RAM".to_string());
+        self.STATE.N_MUX = self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];
+        self.STATE.LOG.push(format!("MTN: N-MUX set to output RAM value {}", self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
     }
 
     //F16 to N-adder input
     fn TN15(&mut self) {
-        self.STATE.N_MUX_LOGIC = 4;
-        self.STATE.LOG.push("ATN: N-MUX set to output 15".to_string());
+        self.STATE.N_MUX = 15;
+        self.STATE.LOG.push("15TN: N-MUX set to output 15".to_string());
     }
 
     //CKI to N-adder input
     fn CKN(&mut self) {
-        self.STATE.N_MUX_LOGIC = 1;
-        self.STATE.LOG.push("ATN: N-MUX set to output CKI".to_string());
+        self.STATE.N_MUX = self.CKI();
+        self.STATE.LOG.push("CKN: N-MUX set to output CKI".to_string());
     }
 
 
@@ -458,7 +428,7 @@ impl SYSTEM {
 
     //Adder compares P and N inputs. If they are identical, status is set to zero
     fn NE(&mut self) {
-        if (self.N_MUX() == self.P_MUX()) {
+        if (self.STATE.N_MUX == self.STATE.P_MUX) {
             self.STATE.STATUS = 0;
             self.STATE.LOG.push("NE: P and N adder inputs identical. Status set to 0".to_string());
         }
@@ -522,6 +492,8 @@ impl SYSTEM {
     //K-input value
     fn step_1(&mut self) {
         self.STATE.ADDER_INC = 0; //used by CIN; a little clumsy
+        self.STATE.P_MUX = 0;
+        self.STATE.N_MUX = 0;
 
         for i in 2..=12 {
             if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
@@ -774,6 +746,8 @@ impl SYSTEM {
                 CHAPTER_ADDRESS: 0, //On non TMS1100/1300 systems these will never be changed
                 CHAPTER_BUFFER: 0,
                 CHAPTER_SUBROUTINE_LATCH: 0,
+                P_MUX: 0,
+                N_MUX: 0,
                 CALL_LATCH: 0,
                 R_OUTPUT: (match version {
                     1200 | 1270 => vec![0; 13],
@@ -790,8 +764,6 @@ impl SYSTEM {
                 Y_REGISTER: 255,
                 STATUS_LATCH: 255,
                 ACCUMULATOR: 255,
-                P_MUX_LOGIC: 0, //There are theoretical very niche circumstances when a valid value for these would be necessary and desirable - but it's undefined and bad coding
-                N_MUX_LOGIC: 0,
             },
             ROM_ARRAY: rom_array,
             INSTRUCTION_PLA: iPLA,
