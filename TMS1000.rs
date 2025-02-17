@@ -547,6 +547,7 @@ impl SYSTEM {
             0x30..=0x33 => SYSTEM::SBIT(self),
             _ => ()
         }
+        println!("{:?}", self.STATE.LOG);
         for i in 0..1 {
             if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
                 SYSTEM::TMS1000_instructions[i](self);
@@ -617,6 +618,7 @@ impl SYSTEM {
             Some(output) => output ^ SYSTEM::TMS1000_mask, //why was this dereferenced? removed
             None => 0, //Should be effectively a No-Op
         });
+        self.STATE.LOG.push(format!("{:b}", SYSTEM::TMS1000_mask));
         self.STATE.LOG.push(format!("Instruction {:b} decoded to {:b} (raw: {:b})", self.STATE.INSTRUCTION, self.STATE.INSTRUCTION_DECODED, self.STATE.INSTRUCTION_DECODED ^ SYSTEM::TMS1000_mask));
     }
 
@@ -691,10 +693,11 @@ impl SYSTEM {
         for line in re.captures_iter(&data) {
             let mut inputs = Vec::new();
             inputs.push(0b0);
-            let output = u32::from_str_radix(&line[2], 2).unwrap(); //Should be guarenteed by regex
+            let output = u32::from_str_radix(line[2].chars().rev().collect::<String>().as_ref(), 2).unwrap(); //Should be guarenteed by regex
+
 
             if !(output == 0) { //empty lines are skipped over
-                for ch in line[1].chars() {
+                for ch in line[1].chars().rev() {
                     if ch == '-' {
                         let mut input0 = Vec::new();
                         let mut input1 = Vec::new();
