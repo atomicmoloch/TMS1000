@@ -147,7 +147,7 @@ impl SYSTEM {
 
     fn P_MUX(&mut self) -> u8 {
     //(0) Y register, (1) CKI, (2) RAM page
-        match self.STATE.N_MUX_LOGIC {
+        match self.STATE.P_MUX_LOGIC {
             0 => {self.STATE.LOG.push(format!("P-MUX: Returning Y register value {}", self.STATE.Y_REGISTER));
                   return self.STATE.Y_REGISTER as u8;},
             1 => {self.STATE.LOG.push("P-MUX: Returning CKI value".to_string());
@@ -159,7 +159,7 @@ impl SYSTEM {
 
     fn N_MUX(&mut self) -> u8 {
     //(0) RAM, (1) CKI, (2) accumulator, (3) not-accumulator or (4) F16
-        match self.STATE.P_MUX_LOGIC {
+        match self.STATE.N_MUX_LOGIC {
             0 => {self.STATE.LOG.push(format!("N-MUX: Returning data in RAM at {}, {} : {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
                   return self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER];}
             1 => {self.STATE.LOG.push("N-MUX: Returning CKI value".to_string());
@@ -514,7 +514,7 @@ impl SYSTEM {
 //Instruction PLA and decoding
 
     const TMS1000_instructions : [fn(&mut SYSTEM); 16] = [SYSTEM::STO, SYSTEM::CKM, SYSTEM::CKP, SYSTEM::YTP, SYSTEM::MTP, SYSTEM::ATN, SYSTEM::NATN, SYSTEM::MTN, SYSTEM::TN15, SYSTEM::CKN, SYSTEM::NE, SYSTEM::C8, SYSTEM::CIN, SYSTEM::AUTA, SYSTEM::AUTY, SYSTEM::STSL];
-    const TMS1000_mask : u32 = 0b0011111111001000;
+    const TMS1000_mask : u32 = 0b0001001111111100;
 
     //Rom Address
     //Read RAM
@@ -523,7 +523,7 @@ impl SYSTEM {
     fn step_1(&mut self) {
         self.STATE.ADDER_INC = 0; //used by CIN; a little clumsy
 
-        for i in 2..12 {
+        for i in 2..=12 {
             if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
                 SYSTEM::TMS1000_instructions[i](self);
             }
@@ -547,8 +547,7 @@ impl SYSTEM {
             0x30..=0x33 => SYSTEM::SBIT(self),
             _ => ()
         }
-        println!("{:?}", self.STATE.LOG);
-        for i in 0..1 {
+        for i in 0..=1 {
             if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
                 SYSTEM::TMS1000_instructions[i](self);
             }
@@ -580,7 +579,7 @@ impl SYSTEM {
             }),
             _ => ()
         }
-        for i in 13..15 {
+        for i in 13..=15 {
             if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
                 SYSTEM::TMS1000_instructions[i](self);
             }
@@ -618,7 +617,6 @@ impl SYSTEM {
             Some(output) => output ^ SYSTEM::TMS1000_mask, //why was this dereferenced? removed
             None => 0, //Should be effectively a No-Op
         });
-        self.STATE.LOG.push(format!("{:b}", SYSTEM::TMS1000_mask));
         self.STATE.LOG.push(format!("Instruction {:b} decoded to {:b} (raw: {:b})", self.STATE.INSTRUCTION, self.STATE.INSTRUCTION_DECODED, self.STATE.INSTRUCTION_DECODED ^ SYSTEM::TMS1000_mask));
     }
 
@@ -693,7 +691,7 @@ impl SYSTEM {
         for line in re.captures_iter(&data) {
             let mut inputs = Vec::new();
             inputs.push(0b0);
-            let output = u32::from_str_radix(line[2].chars().rev().collect::<String>().as_ref(), 2).unwrap(); //Should be guarenteed by regex
+            let output = u32::from_str_radix(line[2].as_ref(), 2).unwrap(); //Should be guarenteed by regex
 
 
             if !(output == 0) { //empty lines are skipped over
@@ -724,12 +722,10 @@ impl SYSTEM {
                 for input in inputs {
                     if !pla_table.contains_key(&input) {
                         pla_table.insert(input, output);
-                        println!("Input: {:b} Output: {:b}", input, output);
                     }
                     else {
                         let combined_output : u32 = output & pla_table.get(&input).unwrap();
                         pla_table.insert(input, combined_output);
-                        println!("Input: {:b} New Output: {:b}", input, combined_output);
                       //  return Err(format!("Input {:b} maps to multiple outputs {:b} and {:b}", input, output, pla_table.get(&input).unwrap()));
                     }
                 }
