@@ -10,15 +10,14 @@ mod read_PLA {
     use regex::Regex;
 
 
-    pub fn read_from_file(filename : &'static str) -> Result<()> {
-        let file = File::open(filename)?;
-        let mut reader = BufReader::new(file);
+    pub fn read_from_file(filename : &'static str) -> Result<(), E> {
+
+        let data: String = fs::read_to_string(filename)?;
         let re = Regex::new(r"([\-0-9]+) ([\-0-9]+)").unwrap();
 
-        for line in reader.lines() {
-            println!("{}", line?);
+        for line in re.captures_iter(data) {
+            println!("{}", &line[1])
         }
-
         Ok(())
     }
 }

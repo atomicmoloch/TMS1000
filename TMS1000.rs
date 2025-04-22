@@ -657,7 +657,7 @@ impl SYSTEM {
             Ok(v) => v,
             Err(_) => return Err("Problem opening or reading PLA file".to_string()),
         };
-        let re = Regex::new(r"([\-0-1]+) ([\-0-1]+)").unwrap(); //Unwrapping a static valid regex should be safe
+        let re = Regex::new(r"([\-0-1]+) ([0-1]+)").unwrap(); //Unwrapping a static valid regex should be safe
         let mut pla_table = HashMap::new();
 
         for line in re.captures_iter(&data) {

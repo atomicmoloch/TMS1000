@@ -10,4 +10,11 @@ PROGRAM START:
 6 - 15 : 63 DYN: Y register decremented, 1 to status if no carry. This sends Y to the P-input using the CKI multiplexxor, 15 to the adder N-input, sends the carry to status, and the adder result to the Y register
 7 - 15 : 62 BR 15 (4): Branches to 15 (4)
 -- Loop will continue until Y is decremented to 0
--- Every iteration will load the accumulator register's value (0) into RAM location 3:Y. As the TMS1000 doesn't guarentee that the RAM will be cleared at power-on, this block of code seems to be present to ensure that
+-- Every iteration will load the accumulator register's value (0) into RAM location 3:Y (from 3:15 to 3:0). As the TMS1000 doesn't guarentee that the RAM will be cleared at power-on, this block of code seems to be present to ensure that.
+8 - 15 : 61 TCY 0: Loads 0 into y register
+9 - 15 : 59 LDP 13: loads 13 into page buffer register
+10 - 15 : 55 BR 20 (60): sets page address to page buffer value (13), sets program counter to 20
+60 - 13 : 20 LDX 2: Loads 2 into x register
+61 - 13 : 40 TCMIY 0
+62 - 13 : 16 LDP 0
+63 - 13 : 32 BR 0 (0)

@@ -1,0 +1,116 @@
+Merlin code
+
+TCMIY - functions with CKM, YTP, CIN, AUTY
+1 is added to Y using YTP, CIN, and AUTY
+CKM - CKI to memory cell - ROM constant loaded to memory through CKI (outputs ROM bits at that instruction)
+
+CLA - Clears accumulator. Loads CKP to P input, and activates CIN. Because the instruction word is 7F, the last 4 ROM bits are loaded into the P input, 1111. This causes the adder to overflow to 0000, which is stored in the accumulator. Additionally, the status is set to 1 through C8.
+
+
+The first three instructions set X to 7, Y to 0, and clears the accumulator
+0 - 0 15 00 : LDX 7
+1 - 0 15 01 : TCY 0
+2 - 0 15 03 : CLA
+
+This instruction appears to have no affect at this time, except to store 0 in the status latch
+3 - 0 15 07 : YNEA
+
+The next four lines use a loop to zero out every memory cell on the X page. The YNEC statement will set the status to 0 when Y is 0, so the loop will be exited when Y overflows from 15 to 0. The RETN instruction does nothing the first time it is executed, but allows these instructions to be called as a subroutine.
+4 - 0 15 15 : TCMIY 0
+5 - 0 15 31 : YNEC 0
+6 - 0 15 63 : BR 15 (4)
+7 - 0 15 62 : RETN
+
+The next instructions repeatedly execute the 'zero out RAM page' subroutine for RAM pages 6 through 2. Now every page except for pages 0 and 1 is zeroed out.
+8 - 0 15 61 : LDX 6
+9 - 0 15 59 : CALL 15 (4)
+10 - 0 15 55 : LDX 5
+11 - 0 15 47 : CALL 15 (4)
+12 - 0 15 30 : LDX 4
+13 - 0 15 60 : CALL 15 (4)
+14 - 0 15 57 : LDX 3
+15 - 0 15 51 : CALL 15 (4)
+16 - 0 15 39 : LDX 2
+17 - 0 15 14 : CALL 15 (4)
+
+Now the program does a 'long branch' to instruction 7 (3) of page 2
+18 - 0 15 29 : LDP 2
+19 - 0 15 58 : BR 7 (3)
+
+In a similar loop to before, 8 is loaded into every memory cell on the 0 page. The fact that it branches back to 3, causing redundant LDX commands, is odd.
+3 - 0 02 07 : LDX 0
+4 - 0 02 15 : TCMIY 8
+5 - 0 02 31 : YNEC 0
+6 - 0 02 63 : BR 7 (3)
+
+Now a two subsequent 'long calls' are made to line 30 (12) of page 0
+7 - 0 02 62 : LDP 0
+8 - 0 02 61 : CALL 30 (12)
+9 - 0 02 59 : LDP 0
+10 - 0 02 55 : CALL 30 (12)
+
+The first memory bit is set in M(1, 15), and M(1, 8) is set to 0. Then, we branch up to word 7 (3).
+12 - 0 00 30 : LDX 1
+13 - 0 00 60 : TCY 15
+14 - 0 00 57 : SBIT 1
+15 - 0 00 51 : TCY 8
+16 - 0 00 39 : TCMIY 0
+17 - 0 00 14 : BR 7 (3)
+
+The accumulator is cleared unnecessarily, Y set to 10, and M(X,Y) is set to the newly-cleared  accumulator's value, 0. The accumulator data is sent to the O output registers by TDO. KNEZ checks if the keyboard inputs are 0. If keyboard inputs are detected, the program branches back to 29 (18).
+As the keyboard hasn't been powered yet (with SETR), it seems this won't branch yet.
+3 - 0 00 07 : CLA
+4 - 0 00 15 : TCY 10
+5 - 0 00 31 : TAM
+6 - 0 00 63 : TDO
+7 - 0 00 62 : KNEZ
+8 - 0 00 61 : BR 29 (18)
+
+This is about as close as you can get to an IF-ELSE statement with the TMS1000. One of the two branches will always happen, as status will go to 1 while the first BRANCH statement is being checked. In this case, 4 is added to the accumulator. If a carry occurs, BR 46 (31) will be taken. If not, BR 31 (5) will be taken. As the accumulator is freshly cleared, the second option is taken.
+This loops back to 31 (5). Nothing different will happen, except that the accumulator and M(1,10) will be incremented by 4 each time, up to 16. Eventually the accumulator will overflow to 0 with a carry, and BR 46 (31) will be taken. M(1,10) will be equal to 12
+9 - 0 00 59 : A4AAC
+10 - 0 00 55 : BR 46 (31)
+11 - 0 00 47 : BR 31 (5)
+
+
+This should be illegal! M(1,12) isn't initalized, but DMAN reads from it
+31 - 0 00 46 : TCY 12
+32 - 0 00 28 : DMAN
+33 - 0 00 56 : BR 11 (29)
+34 - 0 00 49 : TCY 11
+35 - 0 00 35 : RBIT 3
+36 - 0 00 06 : TCY 0
+37 - 0 00 13 : TMA
+38 - 0 00 27 : IYC
+39 - 0 00 54 : AMAAC
+40 - 0 00 45 : TCY 6
+41 - 0 00 26 : XMA
+42 - 0 00 52 : DYN
+43 - 0 00 41 : BR 26 (41)
+
+
+
+
+
+
+
+asdfasdfa
+
+The keyboard inputs are added to the accumulator, and 10 is added. AnAAC activates C8, and as there will  be no carry, the branch will fail. Then, 5 will be added to the accumulator, and the current memory cell contents (M(1,10) = 0). This leaves the accumulator at 15, its maximum value.
+18 - 0 00 29 : TKA
+19 - 0 00 58 : A10AAC
+20 - 0 00 53 : BR 22 (22)
+21 - 0 00 43 : A5AAC
+22 - 0 00 22 : AMAAC
+
+M(1,10) = 15. Y incremented to 11. The bit in the current memory cell is tested, which seems to be undefined??
+I'm assuming it turns up 0??
+23 - 0 00 44 : TAMIYC
+24 - 0 00 24 : TBIT 1 3
+25 - 0 00 48 : BR 6 (36)
+
+Y is set to 12. M(1,12) is
+26 - 0 00 33 : TCY 12
+27 - 0 00 02 : IMAC
+28 - 0 00 05 : BR 10 (57)
+
