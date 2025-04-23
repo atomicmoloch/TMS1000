@@ -3,8 +3,14 @@ Merlin code
 TCMIY - functions with CKM, YTP, CIN, AUTY
 1 is added to Y using YTP, CIN, and AUTY
 CKM - CKI to memory cell - ROM constant loaded to memory through CKI (outputs ROM bits at that instruction)
+Note that CKM executes before Y is incremented
 
 CLA - Clears accumulator. Loads CKP to P input, and activates CIN. Because the instruction word is 7F, the last 4 ROM bits are loaded into the P input, 1111. This causes the adder to overflow to 0000, which is stored in the accumulator. Additionally, the status is set to 1 through C8.
+
+TAMIYC: Executes STO, YTP, CIN, C8, AUTY
+1. YTP and CIN sent to ALU
+2. Accumulator is stored in current memory cell
+3. YTP + 1 is stored in Y register
 
 
 The first three instructions set X to 7, Y to 0, and clears the accumulator
@@ -49,13 +55,32 @@ Now a two subsequent 'long calls' are made to line 30 (12) of page 0
 9 - 0 02 59 : LDP 0
 10 - 0 02 55 : CALL 30 (12)
 
-The first memory bit is set in M(1, 15), and M(1, 8) is set to 0. Then, we branch up to word 7 (3).
+The first memory bit is set to 1 in M(1, 15), and M(1, 8) is set to 0. The branch fails, as TCMIY calls C8 and does not cause a carry, but increments Y to 9.
 12 - 0 00 30 : LDX 1
 13 - 0 00 60 : TCY 15
 14 - 0 00 57 : SBIT 1
 15 - 0 00 51 : TCY 8
 16 - 0 00 39 : TCMIY 0
 17 - 0 00 14 : BR 7 (3)
+
+K-inputs are transferred into the accumulator, and 10 is added to it. As the accumulator is at 0, and k-inputs are at most 4, no carry occurs and the branch fails.
+18 - 0 00 29 : TKA
+19 - 0 00 58 : A10AAC
+20 - 0 00 53 : BR 22 (22)
+
+5 and M(1, 9) (??) are added to the accumulator. This is transferred to M(1, 9) and then Y is incremented to 10.
+21 - 0 00 43 : A5AAC
+22 - 0 00 22 : AMAAC
+23 - 0 00 44 : TAMIYC
+24 - 0 00 24 : TBIT 1 3
+25 - 0 00 48 : BR 6 (36)
+
+
+
+
+
+
+
 
 The accumulator is cleared unnecessarily, Y set to 10, and M(X,Y) is set to the newly-cleared  accumulator's value, 0. The accumulator data is sent to the O output registers by TDO. KNEZ checks if the keyboard inputs are 0. If keyboard inputs are detected, the program branches back to 29 (18).
 As the keyboard hasn't been powered yet (with SETR), it seems this won't branch yet.

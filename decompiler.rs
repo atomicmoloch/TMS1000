@@ -1,3 +1,7 @@
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(unused_parens)]
+
 use std::fs::File;
 use std::io::Read;
 //use std::str;
@@ -57,7 +61,7 @@ fn decodeinstruction_TMS1000(instruction : u8) -> String{
         0x2F => return String::from("CLA"),
         0x30..=0x33 => return String::from("SBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
         0x34..=0x37 => return String::from("RBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
-        0x38..=0x3A => return String::from("TBIT 1 ".to_owned() + &(reversebits_u2(instruction)).to_string()), //check and fix
+        0x38..=0x3A => return String::from("TBIT1 ".to_owned() + &(reversebits_u2(instruction)).to_string()), //check and fix
         0x3B..=0x3F => return String::from("LDX ".to_owned() + &(reversebits_u2(instruction)).to_string()),
         0x40..=0x4F => return String::from("TCY ".to_owned() + &(reversebits_u4(instruction)).to_string()),
         0x50..=0x5F => return String::from("YNEC ".to_owned() + &(reversebits_u4(instruction)).to_string()),
@@ -99,7 +103,7 @@ fn decodeinstruction_TMS1100(instruction : u8) -> String{
         0x28..=0x2F => return String::from("LDX ".to_owned() + &(reversebits_u3(instruction)).to_string()),
         0x30..=0x33 => return String::from("SBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
         0x34..=0x37 => return String::from("RBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
-        0x38..=0x3B => return String::from("TBIT 1 ".to_owned() + &(reversebits_u2(instruction)).to_string()),
+        0x38..=0x3B => return String::from("TBIT1 ".to_owned() + &(reversebits_u2(instruction)).to_string()),
         0x3C => return String::from("SAMAN"),
         0x3D => return String::from("CPAIZ"),
         0x3E => return String::from("IMAC"),
@@ -112,6 +116,43 @@ fn decodeinstruction_TMS1100(instruction : u8) -> String{
         0x80..=0xBF => return String::from("BR ".to_owned() + &(instruction % 64).to_string() + " (" + &(PC_SEQ.iter().position(|&i| i == (instruction % 64)).unwrap()).to_string() + ")"),
         0xC0..=0xFF => return String::from("CALL ".to_owned() + &(instruction % 64).to_string() + " (" + &(PC_SEQ.iter().position(|&i| i == (instruction % 64)).unwrap()).to_string() + ")"),
     }
+}
+
+pub fn decodeinstruction(instruction : u8, version : u32) -> String {
+    match version {
+        1100 | 1300 => return decodeinstruction_TMS1100(instruction.clone()),
+        _ => return decodeinstruction_TMS1000(instruction.clone()),
+    }
+}
+
+pub fn decompile(filename : String, version : u32) -> [String; 64 * 16 * 2]
+{
+    let file = File::open(&filename);
+    let mut data: Vec<u8> = vec![];
+    let _ = file.expect("REASON").read_to_end(&mut data);
+    let mut pcvalue: usize = 0;
+    let mut pavalue: usize = 0;
+    let mut chvalue: usize = 0;
+   // println!("{:?}", data);
+    let mut results: [String; 64 * 16 * 2] = [const {String::new()}; 64 * 16 * 2];
+    for i in data.iter_mut() {
+        let decodedInstruction: String = match version {
+            1100 | 1300 => decodeinstruction_TMS1100(i.clone()),
+            _ => decodeinstruction_TMS1000(i.clone()),
+        };
+        let execorder = PC_SEQ.iter().position(|&i| i == (pcvalue  as u8)).unwrap();
+        results[(1024 * chvalue) + (64 * pavalue) + execorder] = format!("{} {:0>2} {:0>2} ({:0>2}) : {}", chvalue, pavalue, pcvalue, execorder, decodedInstruction);
+        pcvalue += 1;
+        if pcvalue == 64 {
+            pcvalue = 0;
+            pavalue += 1;
+        }
+        if pavalue == 16 {
+            pavalue = 0;
+            chvalue += 1;
+        }
+    }
+    return results;
 }
 
 fn decompile_TMS1000(filename : String) -> [String; 64 * 16]
@@ -165,14 +206,14 @@ fn decompile_TMS1100(filename : String) -> [String; 64 * 16 * 2]
     return results;
 }
 
-fn display_TMS1000(filename : String) {
+pub fn display_TMS1000(filename : String) {
     let src = decompile_TMS1000(filename);
     for (idx, val) in src.iter().enumerate() {
         println!("{} - {}", idx % 64, val);
     }
 }
 
-fn display_TMS1100(filename : String) {
+pub fn display_TMS1100(filename : String) {
     let src = decompile_TMS1100(filename);
     for (idx, val) in src.iter().enumerate() {
         println!("{} - {}", idx % 64, val);

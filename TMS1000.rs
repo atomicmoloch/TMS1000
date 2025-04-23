@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(unused_parens)]
+#![allow(non_upper_case_globals)]
 //using all caps to denote actual system variables
 //and camelcase to denote handler elements
 
@@ -9,32 +11,19 @@ use std::collections::HashMap;
 use regex::Regex;
 
 
+use crate::decompiler;
 
 //HELPER FUNCTIONS
 //imitates smaller than u8
-fn u1(value : u8) -> u8 {
-    return value % 1;
-}
 
-fn u2(value : u8) -> u8 {
-    return value % 4;
-}
 
 fn u2_usize(value : usize) -> usize {
     return value % 4;
 }
 
-fn u3_usize(value : usize) -> usize {
-    return value % 8;
-}
 
 fn u4(value : u8) -> u8 {
     return value % 16;
-}
-
-
-fn u5(value : u8) -> u8 {
-    return value % 32;
 }
 
 fn u5_u32(value : u32) -> u32 {
@@ -134,20 +123,22 @@ impl SYSTEM {
                             return reversebits_u4(self.STATE.INSTRUCTION);}, //constant
             0x08..=0x0F => {self.STATE.LOG.push(format!("CKI: Returning K inputs {}", self.STATE.K_INPUT));
                             return self.STATE.K_INPUT;},
-            0x20..=0x2F => {self.STATE.LOG.push("CKI: Returning 0".to_string());
-                            return 0;},
             0x30..=0x3A => {self.STATE.LOG.push(format!("CKI: Returning bitmask {}", (15 - reversebits_u2(self.STATE.INSTRUCTION))));
                             return 15 - reversebits_u2(self.STATE.INSTRUCTION);}, //bit mask
             0x40..=0x7F => {self.STATE.LOG.push(format!("CKI: Returning constant operand {}", reversebits_u4(self.STATE.INSTRUCTION)));
                             return reversebits_u4(self.STATE.INSTRUCTION);},
-            _ => {self.STATE.LOG.push("CKI: Invalid instruction".to_string());
-                  return 255;}, //does nothing on LDP, LDX, BR and CALL instructions
+            _ => {self.STATE.LOG.push("CKI: Returning 0".to_string());
+                            return 0;},
         }
     }
 
     fn ADDER(&mut self) -> (u8, u8) {
-        let value : u8 = u5(self.STATE.P_MUX.wrapping_add(self.STATE.N_MUX.wrapping_add(self.STATE.ADDER_INC)));
-        let return_value = (u1(value >> 4 & 1), u4(value));
+        if (self.STATE.P_MUX == 255) || (self.STATE.N_MUX == 255) {
+            self.STATE.LOG.push("Adder: ALERT! Inputs set to uninitialized values".into());
+        }
+        let value: u32 = self.STATE.P_MUX as u32 + self.STATE.N_MUX as u32 + self.STATE.ADDER_INC as u32;
+        let carry = if value > 15 { 1 } else { 0 };
+        let return_value = (carry, u4(value as u8));
         self.STATE.LOG.push(format!("Adder: Returning {} + {} + {} = ({}, {})", self.STATE.P_MUX, self.STATE.N_MUX, self.STATE.ADDER_INC, return_value.0, return_value.1));
         return return_value;
     }
@@ -156,6 +147,9 @@ impl SYSTEM {
         self.STATE.PC_INDEX = u6_usize(self.STATE.PC_INDEX + 1);
         self.STATE.PROGRAM_COUNTER = PC_SEQ[self.STATE.PC_INDEX];
         self.STATE.LOG.push(format!("Program Counter: incremented to {} ({})", self.STATE.PROGRAM_COUNTER, self.STATE.PC_INDEX));
+        if self.STATE.CALL_LATCH == 0 {
+            self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX];
+        }
     }
 
     // fn DECREMENT_PC(&mut self) {
@@ -172,6 +166,9 @@ impl SYSTEM {
         self.STATE.PROGRAM_COUNTER = value;
         self.STATE.PC_INDEX = PC_SEQ.iter().position(|&i| i == value).unwrap(); //this should be guarenteed; thus the use of unwrap()
         self.STATE.LOG.push(format!("Program Counter: set to {} ({})", self.STATE.PROGRAM_COUNTER, self.STATE.PC_INDEX));
+        if self.STATE.CALL_LATCH == 0 {
+            self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX];
+        }
     }
 
 //Microinstructions
@@ -184,7 +181,7 @@ impl SYSTEM {
             self.STATE.LOG.push("BR: Status = 1".to_string());
             if (self.STATE.CALL_LATCH == 0) {
                 self.STATE.PAGE_ADDRESS = self.STATE.PAGE_BUFFER;
-                self.STATE.LOG.push(format!("BR: PA set to PB value {}", self.STATE.PAGE_BUFFER));
+                self.STATE.LOG.push(format!("BR: CL = 0. PA set to PB value {}", self.STATE.PAGE_BUFFER));
             }
             else {
                 self.STATE.LOG.push("BR: CL = 1".to_string());
@@ -196,8 +193,7 @@ impl SYSTEM {
     //          self.DECREMENT_PC(); //Since Step() will increment it again
         }
         else {
-            self.STATE.STATUS = 1;
-            self.STATE.LOG.push(("BR: Status = 0. Status set to 1").to_string());
+            self.STATE.LOG.push(("BR: Status = 0. Branch not taken.").to_string());
         }
     }
 
@@ -209,7 +205,7 @@ impl SYSTEM {
                 self.STATE.LOG.push("CALL: CL = 0".to_string());
 
                 self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX];
-                self.STATE.LOG.push(format!("CALL: SR set to {}", self.STATE.SUBROUTINE_RETURN));
+                self.STATE.LOG.push(format!("CALL: SR discconnected. Current value {}", self.STATE.SUBROUTINE_RETURN));
 
                 (self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER) = (self.STATE.PAGE_BUFFER, self.STATE.PAGE_ADDRESS);
                 self.STATE.LOG.push(format!("CALL: PA (now: {}) and PB (now: {}) swapped", self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER));
@@ -225,19 +221,19 @@ impl SYSTEM {
             }
             else {
                 self.STATE.LOG.push("CALL: CL = 1".to_string());
-
+                 self.STATE.LOG.push("CALL: ALERT! Call attempted inside of another call".to_string());
                 self.STATE.CHAPTER_ADDRESS = self.STATE.CHAPTER_BUFFER;
                 self.STATE.LOG.push(format!("CALL: CA set to CB value {}", self.STATE.CHAPTER_BUFFER));
 
                 self.STATE.PAGE_BUFFER = self.STATE.PAGE_ADDRESS;
-                self.STATE.LOG.push(format!("CALL: PA set to PB value {}", self.STATE.PAGE_BUFFER));
+                self.STATE.LOG.push(format!("CALL: PB set to PA value {}", self.STATE.PAGE_BUFFER));
             }
             self.SET_PC(u6(self.STATE.INSTRUCTION) as usize);
     //         self.DECREMENT_PC();
         }
         else {
             self.STATE.STATUS = 1;
-            self.STATE.LOG.push(("CALL: Status = 0. Status set to 1").to_string());
+            self.STATE.LOG.push(("CALL: Status = 0. Call not executed.").to_string());
         }
     }
 
@@ -282,20 +278,24 @@ impl SYSTEM {
 
     //Complement X
     fn COMX (&mut self) {
-        //Should flip bits of X register (1s compliment)
-        self.STATE.X_REGISTER = u2_usize(!self.STATE.X_REGISTER);
-        self.STATE.LOG.push(format!("COMX: X register set to {}", self.STATE.X_REGISTER));
-    }
-
-    fn COMX_TMS1000 (&mut self) {
-        //Changes MSB of X register
-        self.STATE.X_REGISTER ^= 0b1 << 2;
-        self.STATE.LOG.push(format!("COMX: X register set to {}", self.STATE.X_REGISTER));
+        if (self.VERSION == 1100) || (self.VERSION == 1300) {
+            //Changes MSB of X register
+            self.STATE.X_REGISTER ^= 0b1 << 2;
+            self.STATE.LOG.push(format!("COMX: X register set to {}", self.STATE.X_REGISTER));
+        }
+        else {
+            //Should flip bits of X register (1s compliment)
+            self.STATE.X_REGISTER = u2_usize(!self.STATE.X_REGISTER);
+            self.STATE.LOG.push(format!("COMX: X register set to {}", self.STATE.X_REGISTER));
+        }
     }
 
     //Transfer data from accumulator and status latch to O outputs
     fn TDO (&mut self) {
         //Acc and SL transferred to O-output register
+        if (self.STATE.ACCUMULATOR == 255) || (self.STATE.STATUS_LATCH == 255) {
+            self.STATE.LOG.push("TDO: ALERT! Uninitialized value being stored.".into());
+        }
         self.STATE.O_OUTPUT = u5_u32((self.STATE.ACCUMULATOR + (self.STATE.STATUS_LATCH << 4)).into());
         self.STATE.LOG.push(format!("TDO: O output set to {:b}", self.STATE.O_OUTPUT));
     }
@@ -309,13 +309,16 @@ impl SYSTEM {
 
     fn COMC (&mut self) {
         //Toggles chapter buffer
-        self.STATE.CHAPTER_BUFFER = (self.STATE.CHAPTER_BUFFER + 1) % 1;
+        self.STATE.CHAPTER_BUFFER = (self.STATE.CHAPTER_BUFFER + 1) % 2;
         self.STATE.LOG.push(format!("COMC: CB set to {}", self.STATE.CHAPTER_BUFFER));
     }
 
     //Set R output addressed by Y
     fn SETR (&mut self) {
         //sets R(Y) to 1; if Y out of range, no-op
+        if self.STATE.Y_REGISTER == 255 {
+            self.STATE.LOG.push("SETR: ALERT! Uninitialized Y register value being used.".into());
+        }
         if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) && (self.STATE.X_REGISTER < 4) {
             self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 1;
             self.STATE.LOG.push(format!("SETR: R output {} set to 1", self.STATE.Y_REGISTER));
@@ -328,6 +331,9 @@ impl SYSTEM {
     //Reset R output addressed by Y
     fn RSTR (&mut self) {
         //sets R(Y) to 0; if Y out of range, no-op
+        if self.STATE.Y_REGISTER == 255 {
+            self.STATE.LOG.push("SETR: ALERT! Uninitialized Y register value being used.".into());
+        }
         if (self.STATE.Y_REGISTER < self.STATE.R_OUTPUT.len()) && (self.STATE.X_REGISTER < 4) {
             self.STATE.R_OUTPUT[self.STATE.Y_REGISTER] = 0;
             self.STATE.LOG.push(format!("RSETR: R output {} set to 0", self.STATE.Y_REGISTER));
@@ -450,6 +456,9 @@ impl SYSTEM {
 
     //Accumulator data to memory
     fn STO(&mut self) {
+        if self.STATE.ACCUMULATOR == 255 {
+            self.STATE.LOG.push("STO: ALERT! Uninitialized value being stored".into());
+        }
         self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER] = self.STATE.ACCUMULATOR;
         self.STATE.LOG.push(format!("STO: RAM location {}, {} set to accumulator value {}", self.STATE.X_REGISTER, self.STATE.Y_REGISTER, self.STATE.RAM_ARRAY[self.STATE.X_REGISTER][self.STATE.Y_REGISTER]));
     }
@@ -496,7 +505,12 @@ impl SYSTEM {
         self.STATE.N_MUX = 0;
 
         for i in 2..=12 {
-            if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) {
+            if (self.STATE.INSTRUCTION_DECODED & (1 << i) != 0) && !(i == 10 || i == 11){
+                SYSTEM::TMS1000_instructions[i](self);
+            }
+        }
+        for i in 10..=11 { //Ensures that NE and C8 only function after all inputs are loaded in
+            if (self.STATE.INSTRUCTION_DECODED & (1 << i)) != 0 {
                 SYSTEM::TMS1000_instructions[i](self);
             }
         }
@@ -539,10 +553,14 @@ impl SYSTEM {
                 _ => SYSTEM::CLO(self),
             }) ,
             0x10..=0x1F => SYSTEM::LDP(self),
-            0x28..=0x3F => (match self.VERSION {
+            0x28..=0x2F => (match self.VERSION {
                 1100 | 1300 => SYSTEM::LDX_TMS1100(self),
+                _ => ()
+            }),
+            0x3C..=0x3F => (match self.VERSION {
+                1100 | 1300 => (),
                 _ => SYSTEM::LDX_TMS1000(self),
-            }) ,
+            }),
             0x00 => (if !((1100 == self.VERSION) || (1300 == self.VERSION)) {
                 SYSTEM::COMX(self)
             }),
@@ -583,13 +601,14 @@ impl SYSTEM {
         }
 
         self.STATE.INSTRUCTION = self.ROM_ARRAY[(1024 * self.STATE.CHAPTER_ADDRESS) + (64 * self.STATE.PAGE_ADDRESS as usize) + self.STATE.PROGRAM_COUNTER];
-        self.STATE.LOG.push(format!("Instruction {:b} loaded from ROM address {} {} {}", self.STATE.INSTRUCTION, self.STATE.CHAPTER_ADDRESS, self.STATE.PAGE_ADDRESS, self.STATE.PROGRAM_COUNTER));
+        self.STATE.LOG.push(format!("Instruction {:0>8b} loaded from ROM address {} {} {}", self.STATE.INSTRUCTION, self.STATE.CHAPTER_ADDRESS, self.STATE.PAGE_ADDRESS, self.STATE.PROGRAM_COUNTER));
 
         self.STATE.INSTRUCTION_DECODED = (match self.INSTRUCTION_PLA.get(&(self.STATE.INSTRUCTION as u32)) {
             Some(output) => output ^ SYSTEM::TMS1000_mask, //why was this dereferenced? removed
             None => 0, //Should be effectively a No-Op
         });
-        self.STATE.LOG.push(format!("Instruction {:b} decoded to {:b} (raw: {:b})", self.STATE.INSTRUCTION, self.STATE.INSTRUCTION_DECODED, self.STATE.INSTRUCTION_DECODED ^ SYSTEM::TMS1000_mask));
+        self.STATE.LOG.push(format!("Instruction {:0>8b} decoded to {:b} (raw: {:b})", self.STATE.INSTRUCTION, self.STATE.INSTRUCTION_DECODED, self.STATE.INSTRUCTION_DECODED ^ SYSTEM::TMS1000_mask));
+        self.STATE.LOG.push(format!("(Standard instruction {})", decompiler::decodeinstruction(self.STATE.INSTRUCTION, self.VERSION)));
     }
 
     const steps : [fn(&mut SYSTEM); 6] = [SYSTEM::step_1, SYSTEM::step_2, SYSTEM::step_3, SYSTEM::step_4, SYSTEM::step_5, SYSTEM::step_6, ];
@@ -632,22 +651,91 @@ impl SYSTEM {
         self.STATE.CALL_LATCH = 0;
     }
 
+    //Note: do not reverse the bits here. Already done in the read PLA functions.
     pub fn get_o_outputs(&mut self) -> u32 {
-        let rval = match self.INSTRUCTION_PLA.get(&self.STATE.O_OUTPUT) {
+        let rval = match self.OUTPUT_PLA.get(&self.STATE.O_OUTPUT.clone()) {
             Some(v) => *v,
             None => 0,
         };
         return rval;
     }
 
-    pub fn get_r_outputs(&mut self) -> Vec<u8>  {
+    pub fn get_r_outputs_vec(&mut self) -> Vec<u8>  {
         return self.STATE.R_OUTPUT.clone();
+    }
+
+    pub fn get_r_outputs_u32(&mut self) -> u32 {
+        let mut retval: u32 = 0;
+        for (i, val) in self.STATE.R_OUTPUT.iter().enumerate() {
+            retval += (*val as u32) << i;
+        }
+        return retval;
+    }
+
+    pub fn get_rom_index(&mut self) -> usize {
+        return (self.STATE.CHAPTER_ADDRESS * 1024) + (self.STATE.PAGE_ADDRESS as usize * 64) + self.STATE.PC_INDEX;
     }
 
     pub fn get_log(&mut self) -> Vec<String> {
         let retval = self.STATE.LOG.clone();
         self.STATE.LOG = Vec::new();
         return retval;
+    }
+
+    pub fn get_ram_array(&mut self) -> [[u8; 16]; 8] {
+        return self.STATE.RAM_ARRAY.clone();
+    }
+
+    pub fn get_x_reg(&mut self) -> usize {
+        return self.STATE.X_REGISTER.clone();
+    }
+
+    pub fn get_y_reg(&mut self) -> usize {
+        return self.STATE.Y_REGISTER.clone();
+    }
+
+    pub fn get_pa_reg(&mut self) -> u8 {
+        return self.STATE.PAGE_ADDRESS.clone();
+    }
+
+    pub fn get_pb_reg(&mut self) -> u8 {
+        return self.STATE.PAGE_BUFFER.clone();
+    }
+
+    pub fn get_cl_reg(&mut self) -> u8 {
+        return self.STATE.CALL_LATCH.clone();
+    }
+
+    pub fn get_acc_reg(&mut self) -> u8 {
+        return self.STATE.ACCUMULATOR.clone();
+    }
+
+    pub fn get_status(&mut self) -> u8 {
+        return self.STATE.STATUS.clone();
+    }
+
+    pub fn get_sl_reg(&mut self) -> u8 {
+        return self.STATE.STATUS_LATCH.clone();
+    }
+
+    pub fn get_ca_reg(&mut self) -> usize {
+        return self.STATE.CHAPTER_ADDRESS.clone();
+    }
+
+    pub fn get_cb_reg(&mut self) -> usize {
+        return self.STATE.CHAPTER_BUFFER.clone();
+    }
+
+    pub fn get_csl_reg(&mut self) -> usize {
+        return self.STATE.CHAPTER_SUBROUTINE_LATCH.clone();
+    }
+
+    pub fn get_pc_reg(&mut self) -> usize {
+        return self.STATE.PROGRAM_COUNTER.clone();
+    }
+
+    pub fn get_sr_reg(&mut self) -> usize {
+        return self.STATE.SUBROUTINE_RETURN.clone();
     }
 
     //Reads PLA into a HashMap
@@ -696,7 +784,9 @@ impl SYSTEM {
                         pla_table.insert(input, output);
                     }
                     else {
-                        let combined_output : u32 = output & pla_table.get(&input).unwrap();
+                        let combined_output : u32 = output | pla_table.get(&input).unwrap();
+                        //Bitwise ORs overlapping PLA terms
+                        //Since if one term activates (and brings the instruction line to 1), the output line will be 1
                         pla_table.insert(input, combined_output);
                       //  return Err(format!("Input {:b} maps to multiple outputs {:b} and {:b}", input, output, pla_table.get(&input).unwrap()));
                     }
@@ -731,7 +821,7 @@ impl SYSTEM {
         let _ = rFile.read_to_end(&mut rom_array);
 
 
-        let mut sys = SYSTEM {
+        let sys = SYSTEM {
             VERSION: version,
             STATE: SYSTEM_STATE {
                 LOG : Vec::new(),
