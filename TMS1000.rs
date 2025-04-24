@@ -738,6 +738,14 @@ impl SYSTEM {
         return self.STATE.SUBROUTINE_RETURN.clone();
     }
 
+    pub fn get_ipla(&mut self) -> HashMap<u32, u32> {
+        return self.INSTRUCTION_PLA.clone();
+    }
+
+    pub fn get_opla(&mut self) -> HashMap<u32, u32> {
+        return self.OUTPUT_PLA.clone();
+    }
+
     //Reads PLA into a HashMap
     //Used in initialization (below)
     fn read_PLA(filename : String) -> Result<HashMap<u32, u32>, String> {

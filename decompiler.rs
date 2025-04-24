@@ -61,8 +61,8 @@ fn decodeinstruction_TMS1000(instruction : u8) -> String{
         0x2F => return String::from("CLA"),
         0x30..=0x33 => return String::from("SBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
         0x34..=0x37 => return String::from("RBIT ".to_owned() + &(reversebits_u2(instruction)).to_string()),
-        0x38..=0x3A => return String::from("TBIT1 ".to_owned() + &(reversebits_u2(instruction)).to_string()), //check and fix
-        0x3B..=0x3F => return String::from("LDX ".to_owned() + &(reversebits_u2(instruction)).to_string()),
+        0x38..=0x3B => return String::from("TBIT1 ".to_owned() + &(reversebits_u2(instruction)).to_string()), //check and fix
+        0x3C..=0x3F => return String::from("LDX ".to_owned() + &(reversebits_u2(instruction)).to_string()),
         0x40..=0x4F => return String::from("TCY ".to_owned() + &(reversebits_u4(instruction)).to_string()),
         0x50..=0x5F => return String::from("YNEC ".to_owned() + &(reversebits_u4(instruction)).to_string()),
         0x60..=0x6F => return String::from("TCMIY ".to_owned() + &(reversebits_u4(instruction)).to_string()),
@@ -122,7 +122,7 @@ pub fn decodeinstruction(instruction : u8, version : u32) -> String {
     match version {
         1100 | 1300 => return decodeinstruction_TMS1100(instruction.clone()),
         _ => return decodeinstruction_TMS1000(instruction.clone()),
-    }
+    };
 }
 
 pub fn decompile(filename : String, version : u32) -> [String; 64 * 16 * 2]
@@ -220,16 +220,4 @@ pub fn display_TMS1100(filename : String) {
     }
 }
 
-fn main() {
-    let version : u32 = std::env::args().nth(1).expect("No version number specified").parse().expect("Version number must be an integer");
-    let input_file = std::env::args().nth(2).expect("No input file given");
-    if (version == 1100) || (version == 1300) {
-        display_TMS1100(input_file);
-    }
-    else {
-        display_TMS1000(input_file);
-    }
-  //  let src = decompile("simon.bin");
-  //  let src = decompile("mp3300.bin");
 
-}
