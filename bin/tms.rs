@@ -39,7 +39,9 @@ fn get_bin_input(max : u32) -> u32 {
     }
 }
 
-
+//This entire file was originally just a stopgap to test the TMS1000 emulator
+//Hence the very basic user interface and argument parsing
+//"There's nothing so permanant as a temporary solution"
 fn main() {
     let version : u32 = std::env::args().nth(1).expect("No version number specified").parse().expect("Version number must be an integer");
     let ROM_file = std::env::args().nth(2).expect("No ROM file given");
@@ -128,7 +130,7 @@ fn main() {
         match command.as_str() {
             "step\n" | "s\n" => {
                 if !halt {
-                    system = system.STEP(k_inputs);
+                    system.STEP_mut(k_inputs);
                     println!("One step executed");
 
                 }
@@ -138,24 +140,24 @@ fn main() {
                 },
             "cycle\n" | "c\n" => {
                 if !halt {
-                    system = system.instruction_cycle(k_inputs);
+                    system.instruction_cycle_mut(k_inputs);
                     println!("One instruction cycle executed");
                 }
                 else {
                     println!("SYSTEM HALTED");
                 }
             },
-            "setk\n" => k_inputs = get_bin_input(4) as u8,
+            "setk\n" | "sk\n" => k_inputs = get_bin_input(4) as u8,
             "seenext\n" | "next\n" | "n\n" => {
                 let end: usize = cmp::min(system.get_rom_index() + 10, decompiled_code.len() - 1);
                 for line in decompiled_code[system.get_rom_index()..end].iter() {
                     println!("{}", line);
                 }
             },
-            "setbreak\n" | "setb\n" => {
+            "setbreak\n" | "setb\n" | "sb\n" => {
                 break_on_alert = !break_on_alert;
                 println!("{}", break_on_alert);},
-            "sethalt\n" | "seth\n" => {
+            "sethalt\n" | "seth\n" | "sn\n" => {
                 halt = !halt;
                 println!("{}", halt);},
             "printram\n" | "printr\n" | "pr\n" => println!("{:?}\n", system.get_ram_array()),
@@ -195,7 +197,7 @@ fn main() {
                     }
                 }
             },
-            "init\n" | "initialize\n" | "reinitialize\n" => system.initialize(),
+            "init\n" | "initialize\n" | "reinitialize\n" => system.INITIALIZE(),
             "quit\n" | "q\n" => {println!("Goodbye");
                 command = "quit\n".into();},
             "auto100\n" | "a100\n" => {
@@ -216,7 +218,7 @@ fn main() {
             "auto10000000\n" | "a10000000\n" => {
                 auto_run = 1000000;
                 command = "cycle".into();}
-            _ => println!("Could not interpret command"),
+            _ => println!("Could not interpret command\nValid commands are: step, s, cycle, c, setk, sk, seenext, next, sn, setbreak, setb, sb, sethalt, seth, sh, printram, printr, pr, clearotriggers, clearotrigger, clot, cot, clearrtriggers, clearrtrigger, clrt, crt, setotrigger, setot, sot, setrtrigger, setrt, srt, settings, printsettings, ps, registers, printregisters, pn, setlog, logfile, logout, lo, reinitialize, initialize, init, quit, q, auto100, a100, auto1000, a1000, auto10000, a10000, auto100000, a100000, auto1000000, a1000000, auto10000000, a10000000"),
         }
         let log = system.get_log();
         for entry in log.iter() {
