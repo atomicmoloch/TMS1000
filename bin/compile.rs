@@ -14,10 +14,16 @@ fn main() {
     };
 
     if (version == 1100) || (version == 1300) {
-        compiler::compile_TMS1100(data);
+        match std::fs::write(output_file, compiler::compile_TMS1100(data)) {
+            Ok(_) => println!("Success!"),
+            _ => println!("An error occured"),
+        }
     }
     else {
-        compiler::compile_TMS1000(data);
+        match std::fs::write(output_file, compiler::compile_TMS1000(data)) {
+            Ok(_) => println!("Success!"),
+            _ => println!("An error occured"),
+        }
     }
 
 }

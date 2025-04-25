@@ -2,11 +2,7 @@
 #![allow(non_snake_case)]
 #![allow(unused_parens)]
 
-use std::cmp;
-
-//pub mod TMS1000;
 use tms::TMS1000;
-use std::io::Write;
 use std::time::SystemTime;
 
 
@@ -20,6 +16,7 @@ fn speedtest_300k(mut system : TMS1000::SYSTEM, k_inp : u8) {
     let duration = end.duration_since(start).unwrap();
     println!("Executed 300,000 instructions in {} milliseconds", duration.as_millis());
     println!("{} microseconds per instruction", duration.as_micros() / 300000);
+    println!("Effective kHz: {}", 300000/duration.as_millis());
     println!("{:?}", system.get_o_outputs());
 }
 
@@ -33,6 +30,7 @@ fn speedtest_500k(mut system : TMS1000::SYSTEM, k_inp : u8) {
     let duration = end.duration_since(start).unwrap();
     println!("Executed 500000 instructions in {} milliseconds", duration.as_millis());
     println!("{} microseconds per instruction", duration.as_micros() / 500000);
+    println!("Effective kHz: {}", 500000/duration.as_millis());
     println!("{:?}", system.get_o_outputs());
 }
 

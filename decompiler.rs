@@ -159,7 +159,7 @@ fn decompile_TMS1000(filename : String) -> [String; 64 * 16]
 {
     let file = File::open(&filename);
     let mut data: Vec<u8> = vec![];
-    let _ = file.expect("REASON").read_to_end(&mut data);
+    let _ = file.expect("File Could Not Be Read").read_to_end(&mut data);
     let mut pcvalue: usize = 0;
     let mut pavalue: usize = 0;
    // println!("{:?}", data);
@@ -168,7 +168,7 @@ fn decompile_TMS1000(filename : String) -> [String; 64 * 16]
         //Reorders instructions in order of execution
         //(TMS1000 uses a pseudo-random program counter order, seen in PC_SEQ)
         let execorder = PC_SEQ.iter().position(|&i| i == (pcvalue  as u8)).unwrap();
-        results[(64 * pavalue) + execorder] = pavalue.to_string() + " : " + &pcvalue.to_string() + " " + &decodeinstruction_TMS1000(i.clone());
+        results[(64 * pavalue) + execorder] = format!("{:0>2} {:0>2} : {}", pavalue, pcvalue, decodeinstruction_TMS1000(i.clone()));
         pcvalue += 1;
         if pcvalue == 64 {
             pcvalue = 0;
@@ -182,7 +182,7 @@ fn decompile_TMS1100(filename : String) -> [String; 64 * 16 * 2]
 {
     let file = File::open(&filename);
     let mut data: Vec<u8> = vec![];
-    let _ = file.expect("REASON").read_to_end(&mut data);
+    let _ = file.expect("File Could Not Be Read").read_to_end(&mut data);
     let mut pcvalue: usize = 0;
     let mut pavalue: usize = 0;
     let mut chvalue: usize = 0;
