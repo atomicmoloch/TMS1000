@@ -205,7 +205,7 @@ impl SYSTEM {
                 self.log_append("CALL: CL = 0".to_string());
 
                 self.STATE.SUBROUTINE_RETURN = PC_SEQ[self.STATE.PC_INDEX];
-                self.log_append(format!("CALL: SR discconnected. Current value {}", self.STATE.SUBROUTINE_RETURN));
+                self.log_append(format!("CALL: SR disconnected. Current value {}", self.STATE.SUBROUTINE_RETURN));
 
                 (self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER) = (self.STATE.PAGE_BUFFER, self.STATE.PAGE_ADDRESS);
                 self.log_append(format!("CALL: PA (now: {}) and PB (now: {}) swapped", self.STATE.PAGE_ADDRESS, self.STATE.PAGE_BUFFER));

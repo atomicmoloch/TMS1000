@@ -148,7 +148,7 @@ fn main() {
                 }
             },
             "setk\n" | "sk\n" => k_inputs = get_bin_input(4) as u8,
-            "seenext\n" | "next\n" | "n\n" => {
+            "seenext\n" | "next\n" | "sn\n" | "n\n" => {
                 let end: usize = cmp::min(system.get_rom_index() + 10, decompiled_code.len() - 1);
                 for line in decompiled_code[system.get_rom_index()..end].iter() {
                     println!("{}", line);
@@ -157,7 +157,7 @@ fn main() {
             "setbreak\n" | "setb\n" | "sb\n" => {
                 break_on_alert = !break_on_alert;
                 println!("{}", break_on_alert);},
-            "sethalt\n" | "seth\n" | "sn\n" => {
+            "sethalt\n" | "seth\n" | "sh\n" => {
                 halt = !halt;
                 println!("{}", halt);},
             "printram\n" | "printr\n" | "pr\n" => println!("{:?}\n", system.get_ram_array()),
